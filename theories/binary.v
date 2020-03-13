@@ -1,6 +1,6 @@
 (* Parser for the binary Wasm format *)
 (* TODO: hook up to an OCaml harness and test!!! *)
-(* TODO: move a few types to wasm.v *)
+(* TODO: move a few types to wasm.v / wasm_types.v *)
 (* TODO: write a relational spec, and prove they correspond *)
 
 From Wasm Require Import wasm.
@@ -499,7 +499,10 @@ Definition byte_ {n} : w_parser ascii n :=
 Definition function_type_ {n} : w_parser function_type n :=
   exact_byte x60 &> (prod_curry Tf <$> vec value_type_ <&> vec value_type_).
 
-Record limits := Mk_limits { lim_min : nat; lim_max : option nat; }.
+Record limits : Type := Mk_limits {
+  lim_min : nat;
+  lim_max : option nat;
+}.
 
 Definition limits_ {n} : w_parser limits n :=
   exact_byte x00 &> ((fun min => Mk_limits min None) <$> u32_nat) <|>
@@ -559,7 +562,12 @@ Record table := Mk_table { t_type : table_type }.
 Definition table_ {n} : w_parser table n :=
   Mk_table <$> table_type_.
 
-Definition mem := limits.
+Record mem : Type := Mk_mem {
+  m_type : limits;
+}.
+
+Definition mem_ {n} : w_parser mem n :=
+  Mk_mem <$> limits_.
 
 Record global2 : Type := {
   g_type : global_type;
@@ -662,7 +670,7 @@ Definition tablesec {n} : w_parser (list table) n :=
   exact_byte x04 &>  vec table_.
 
 Definition memsec {n} : w_parser (list mem) n :=
-  exact_byte x05 &> vec limits_.
+  exact_byte x05 &> vec mem_.
 
 Definition globalsec {n} : w_parser (list global2) n :=
   exact_byte x06 &> vec global2_.

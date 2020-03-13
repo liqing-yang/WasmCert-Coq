@@ -178,7 +178,9 @@ Definition inst_typing (s : store_record) (inst : instance) (C : t_context) :=
              | None, None => true
              | None, Some _ => false
              | Some _, None => false
-             | Some i', Some n' => (i' < length (s_tab s)) && (option_map (@length (option function_closure)) (List.nth_error (s_tab s) i') == Some n')
+             | Some i', Some n' =>
+               let x := List.map (fun y => y.(ti_func)) s.(s_tab) (* TODO: what about ti_max_opt? *) in
+               (i' < length x) && (option_map (@length (option function_closure)) (List.nth_error x i') == Some n')
              end) &&
           (memi_agree (s_mem s) j m)
   else false.

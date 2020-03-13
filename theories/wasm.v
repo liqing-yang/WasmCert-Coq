@@ -5,6 +5,8 @@
  * - lots of axioms
  * - no validation
  * - variable order in inductive definitions is pretty much random
+ * - should be split into wasm_types.v and wasm_utils.v, to make it possible to quickly look up types
+ * - rename types 
  *)
 
 Require Export numerics.
@@ -64,15 +66,31 @@ Fixpoint last {A} (l : list A) : option A :=
 Definition msbyte (bs : bytes) : option byte :=
   last bs.
 
-Definition mem := list byte.
+Record mem : Type := Mk_mem {
+  mem_data : list byte;
+  mem_max_opt : option nat; (* TODO: should this be taken into account? *)
+}.
+
+Definition mem_eqb (g1 g2 : mem) : bool :=
+  (mem_data g1 == mem_data g2) && (mem_max_opt g1 == mem_max_opt g2).
+
+Lemma eqmemP : Equality.axiom mem_eqb.
+Proof.
+Admitted.
+
+Definition mem_eq_dec := Equality_axiom_eq_dec eqmemP.
+
+Canonical Structure mem_eqMixin := EqMixin eqmemP.
+Canonical Structure mem_eqType := Eval hnf in EqType mem mem_eqMixin.
 
 Definition read_bytes (m : mem) (n : nat) (l : nat) : bytes :=
-  List.firstn l (List.skipn n m).
+  List.firstn l (List.skipn n m.(mem_data)).
 
 Definition write_bytes (m : mem) (n : nat) (bs : bytes) : mem :=
-  app (List.firstn n m) (app bs (List.skipn (n + length bs) m)).
+  {| mem_data := app (List.firstn n m.(mem_data)) (app bs (List.skipn (n + length bs) m.(mem_data)));
+     mem_max_opt := m.(mem_max_opt); |}.
 
-Definition mem_append (m : mem) (bs : bytes) := app m bs.
+(*Definition mem_append (m : mem) (bs : bytes) := app m bs.*)
 
 Inductive value_type : Type := (* t *)
 | T_i32
@@ -383,7 +401,22 @@ Canonical Structure function_closure_eqMixin := EqMixin eqfunction_closureP.
 Canonical Structure function_closure_eqType := Eval hnf in EqType function_closure function_closure_eqMixin.
 
 
-Definition tabinst := list (option function_closure).
+Record tabinst : Type := {
+  ti_func : list (option function_closure);
+  ti_max_opt : option nat;
+}.
+
+Definition tabinst_eqb (g1 g2 : tabinst) : bool :=
+  (ti_func g1 == ti_func g2) && (ti_max_opt g1 == ti_max_opt g2).
+
+Lemma eqtabinstP : Equality.axiom tabinst_eqb.
+Proof.
+Admitted.
+
+Definition tabinst_eq_dec := Equality_axiom_eq_dec eqtabinstP.
+
+Canonical Structure tabinst_eqMixin := EqMixin eqtabinstP.
+Canonical Structure tabinst_eqType := Eval hnf in EqType tabinst tabinst_eqMixin.
 
 Record global : Type := {
   g_mut : mutability;
@@ -437,8 +470,8 @@ Canonical Structure global_eqType := Eval hnf in EqType global global_eqMixin.
 
 Record store_record : Type := (* s *) {
   s_funcs : list function_closure;
-  s_tab : list tabinst;
-  s_mem : list mem;
+  s_tab : list tabinst; (* TODO: make name match spec? *)
+  s_mem : list mem; (* TODO: make name match spec? *)
   s_globs : list global;
 }.
 
@@ -512,7 +545,7 @@ Inductive lholed : Type :=
 
 
 Definition mem_size (m : mem) :=
-  length m.
+  length m.(mem_data).
 
 Definition mem_grow (m : mem) (n : nat) :=
  m ++ bytes_replicate (n * 64000) 0.
@@ -722,11 +755,15 @@ Definition smem_ind (s : store_record) (i : instance) : option nat :=
   i_mem i.
 
 Definition stab_s (s : store_record) (i j : nat) : option function_closure :=
-  let stabinst := List.nth_error (s_tab s) i in
-  option_bind (fun x => x) (
+  let stabinst := List.nth_error s.(s_tab) i in
   option_bind
-    (fun stabinst => if length stabinst > j then List.nth_error stabinst j else None)
-    stabinst).
+    (fun x => x)
+    (option_bind
+      (fun stabinst =>
+        let x := stabinst.(ti_func) in
+        (* TODO: should this look at ti_max_opt? *)
+        if length x > j then List.nth_error x j else None)
+      stabinst).
 
 Definition stab (s : store_record) (i : instance) (j : nat) : option function_closure :=
   if i_tab i is Some k then stab_s s k j else None.
