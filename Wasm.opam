@@ -7,7 +7,7 @@ license: "CeCILL-B"
 homepage: "https://github.com/rems-project/wasm_coq"
 bug-reports: "https://github.com/rems-project/wasm_coq/issues"
 depends: [
-  "dune" {>= "1.11"}
+  "dune" {>= "2.5"}
 ]
 build: [
   ["dune" "subst"] {pinned}
