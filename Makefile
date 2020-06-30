@@ -10,4 +10,5 @@ clean:
 	rm theories/*.glob || true
 	rm theories/*.aux || true
 	rm src/extract.{ml,mli} || true
+	rm theories/extract.{ml,mli} || true
 

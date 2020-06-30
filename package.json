@@ -16,15 +16,14 @@
   "dependencies": {
     "@opam/cmdliner": "1.0.4",
     "@opam/coq": "8.10.1",
-    "@opam/dune": "2.5.0",
-    "@opam/menhir": "20181113",
-    "compcert": "3.6",
+    "@opam/dune": "~2.6",
+    "compcert": "github:Mbodin/CompCert#b004de92d4b2e4a1190855e2190485a89250e366",
     "coq-flocq": "3.2.0",
     "coq-iris": "*",
-		"strong-induction": "*",
+		"strong-induction": "github:Mbodin/strong-induction#0779e72f0f4c371311b60009606c34fc1f8cd01a",
     "coq-mathcomp-ssreflect": "*",
-		"parseque": "*",
-		"coq-prelude": "*"
+		"parseque": "github:Mbodin/parseque#c33d4ae040714c7d880d036c396a07cf849b4ff0",
+		"coq-prelude": "github:Mbodin/coq-prelude#73ac9ecd71d279e4b0c8172db42e712a997e600e"
   },
   "devDependencies": {},
   "resolutions": {
@@ -32,7 +31,10 @@
       "source":
         "github:math-comp/math-comp#748d716efb2f2f75946c8386e441ce1789806a39",
       "override": {
-        "dependencies": { "@opam/coq": "8.10.1" },
+        "dependencies": {
+					"@opam/coq": "8.10.1",
+					"ocaml": "*"
+				},
         "buildsInSource": true,
         "buildEnv": {
           "HOME": "#{self.target_dir}",
@@ -51,7 +53,10 @@
         "git:https://gitlab.inria.fr/flocq/flocq.git#a9be51660cd865d323b0b3bbb9faa793856ea0de",
       "version": "3.2.0",
       "override": {
-        "dependencies": { "@opam/coq": "8.10.1" },
+        "dependencies": {
+					"@opam/coq": "8.10.1",
+					"ocaml": "*"
+				},
         "buildEnv": {
           "HOME": "#{self.target_dir}",
           "COQBIN": "#{@opam/coq.bin}",
@@ -66,14 +71,16 @@
         ]
       }
     },
-    "compcert":
-      "github:Mbodin/CompCert#db71ae2cb478db5a7914123c42c69ec9a5731064",
     "coq-iris": {
       "source":
         "git:https://gitlab.mpi-sws.org/iris/iris.git#fad7bbcf97bf47131c934e54f53fd8f178be568c",
       "override": {
         "buildsInSource": true,
-        "dependencies": { "@opam/coq": "8.10.1", "@opam/coq-stdpp": "1.2.1" },
+        "dependencies": {
+					"@opam/coq": "8.10.1",
+					"@opam/coq-stdpp": "1.2.1",
+					"ocaml": "*"
+				},
         "buildEnv": {
           "HOME": "#{self.target_dir}",
           "COQBIN": "#{@opam/coq.bin}/",
@@ -88,7 +95,10 @@
         "git:https://gitlab.mpi-sws.org/iris/stdpp.git#0e698840c2d4fb589fb327c6a53feca50cda21cb",
       "version": "1.2.1",
       "override": {
-        "dependencies": { "@opam/coq": "8.10.1" },
+        "dependencies": {
+					"@opam/coq": "8.10.1",
+					"ocaml": "*"
+				},
         "buildEnv": {
           "HOME": "#{self.target_dir}",
           "COQBIN": "#{@opam/coq.bin}/",
@@ -97,9 +107,6 @@
         },
         "build": [ [ "make", "-j4" ], [ "make", "install" ] ]
       }
-    },
-		"strong-induction": "github:Mbodin/strong-induction#0779e72f0f4c371311b60009606c34fc1f8cd01a",
-		"parseque": "github:Mbodin/parseque#c33d4ae040714c7d880d036c396a07cf849b4ff0",
-		"coq-prelude": "github:Mbodin/coq-prelude#73ac9ecd71d279e4b0c8172db42e712a997e600e"
+    }
   }
 }
