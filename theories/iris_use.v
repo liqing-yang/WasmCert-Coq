@@ -5,7 +5,10 @@ From mathcomp Require Import eqtype.
 From iris.program_logic Require Import language.
 From iris.proofmode Require Import tactics.
 From iris.program_logic Require Export weakestpre.
-Require Export host operations iris.
+From iris.base_logic Require Export gen_heap proph_map.
+Require Export iris.
+Require Export datatypes host operations.
+
 Set Default Proof Using "Type". (* what is this? *)
 
 Close Scope byte_scope.
@@ -33,6 +36,7 @@ Instance loc_inhabited : Inhabited loc := populate {|loc_car := 0 |}.
 Instance loc_countable : Countable loc.
 Proof. by apply (inj_countable' loc_car (λ i, {| loc_car := i |})); intros []. Qed.
 
+(* FIXME
 Program Instance loc_infinite : Infinite loc :=
   inj_infinite (λ p, {| loc_car := p |}) (λ l, Some (loc_car l)) _.
 Next Obligation.
@@ -41,8 +45,6 @@ Admitted.
 
 Definition proph_id := positive.
 
-From iris.base_logic Require Export gen_heap.
-From iris.base_logic.lib Require Export proph_map.
 Class heapG Σ := HeapG {
   heapG_invG : invG Σ;
   heapG_gen_heapG :> gen_heapG loc val Σ;
@@ -52,7 +54,7 @@ Class heapG Σ := HeapG {
 Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
     iris_invG := heapG_invG;
     state_interp σ κs _ := True%I
-      (* (gen_heap_ctx σ.(heap) ∗ proph_map_ctx κs σ.(used_proph_id))%I*);
+      (* (gen_heap_ctx σ.(heap) ∗ proph_map_ctx κs σ.(used_proph_id))%I *);
     fork_post _ := True%I;
   }.
 
@@ -101,6 +103,7 @@ Proof.
   simpl.
   (* FIXME: iApply. *)
 Admitted.
+*)
 
 End Host.
 

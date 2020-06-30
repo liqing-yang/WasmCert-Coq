@@ -4,7 +4,7 @@
 Require Import common.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From StrongInduction Require Import StrongInduction Inductions.
-From Prelude Require Import Control.
+From ITree Require Import ITree ITreeFacts.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -20,7 +20,7 @@ Let host := host host_function.
 
 Let store_record := store_record host_function.
 Let administrative_instruction := administrative_instruction host_function.
-Let monadic_host := monadic_host host_function.
+Let executable_host := executable_host host_function.
 Let config_tuple := config_tuple host_function.
 Let config_one_tuple_without_e := config_one_tuple_without_e host_function.
 Let res_tuple := res_tuple host_function.
@@ -30,19 +30,24 @@ Let v_to_e_list := @v_to_e_list host_function.
 Let lfilledInd := @lfilledInd host_function.
 
 Variable host_instance : host.
-Variable host_monadic_instance : monadic_host.
+Variable executable_host_instance : executable_host.
 
 Let host_state := host_state host_instance.
-Let host_monad := host_monad host_monadic_instance.
+Let host_event := host_event executable_host_instance.
+
+Context {eff : Type -> Type}.
+Context {eff_has_host_event : host_event -< eff}.
 
 Let run_step_fuel : config_tuple -> nat := @run_step_fuel host_function.
-Let run_step_with_fuel : fuel -> depth -> instance -> config_tuple -> host_monad res_tuple :=
-  run_step_with_fuel host_monadic_instance.
+(* FIXME: Do we need these instances?
+Let run_step_base : fuel -> depth -> instance -> config_tuple -> host_monad res_tuple :=
+  run_step_base executable_host_instance.
 Let run_one_step : fuel -> depth -> instance -> config_one_tuple_without_e ->
                    administrative_instruction -> host_monad res_tuple :=
-  run_one_step host_monadic_instance.
-Let run_v : fuel -> depth -> instance -> config_tuple -> host_monad (store_record * res)%type :=
-  run_v host_monadic_instance.
+  run_one_step executable_host_instance.
+*)
+Let run_v : depth -> instance -> config_tuple -> itree eff (store_record * res)%type :=
+  run_v (eff := _).
 
 Hint Constructors reduce_simple : core.
 Hint Constructors reduce : core.
@@ -327,7 +332,7 @@ Ltac explode_and_simplify :=
   | |- ?T = _ -> _ =>
     lazymatch T with
     | context C [split_n ?l ?n] => rewrite (split_n_is_take_drop l n)
-    | context C [vs_to_es ?l] => rewrite/vs_to_es
+    | context C [vs_to_es ?l] => rewrite /vs_to_es
     | context C [match ?b with true => ?v1 | false => ?v2 end] =>
       let Hb := fresh "if_expr" in
       destruct b eqn:Hb;
@@ -456,10 +461,10 @@ Ltac frame_out l r :=
     evar (stb : seq administrative_instruction);
     let Est1 := fresh "E_before" in
     assert (Est1: st1 = (l ++ sta) ++ r); [
-        rewrite/sta {sta stb}; try show_list_equality
+        rewrite /sta {sta stb}; try show_list_equality
       | let Est2 := fresh "E_after" in
         assert (Est2: st2 = (l ++ stb) ++ r); [
-            rewrite/stb {Est1 sta stb}; try show_list_equality
+            rewrite /stb {Est1 sta stb}; try show_list_equality
           | rewrite Est1 Est2;
             apply r_elimr with (les := r);
             apply r_eliml with (lconst := l); first try solve_const_list;
@@ -503,16 +508,17 @@ Ltac eframe :=
   evar (r : seq administrative_instruction);
   frame_out l r.
 
+(* LATER: I am temporary commenting out the termination lemmas.
 Local Lemma run_step_fuel_increase_aux : forall d i es s vs s' vs' r' fuel fuel',
   fuel <= fuel' ->
   TProp.Forall (fun e => forall d i tt s vs r fuel fuel',
      fuel <= fuel' ->
-     run_one_step fuel d i tt e = pure (s, vs, r) ->
+     run_one_step fuel d i tt e = ret (s, vs, r) ->
      r = RS_crash C_exhaustion
-     \/ run_one_step fuel' d i tt e = pure (s, vs, r)) es ->
-  run_step_with_fuel fuel d i (s, vs, es) = pure (s', vs', r') ->
+     \/ run_one_step fuel' d i tt e = ret (s, vs, r)) es ->
+  run_step_base fuel d i (s, vs, es) = ret (s', vs', r') ->
   r' = RS_crash C_exhaustion
-  \/ run_step_with_fuel fuel' d i (s, vs, es) = pure (s', vs', r').
+  \/ run_step_base fuel' d i (s, vs, es) = ret (s', vs', r').
 Proof.
   move=> d i es s vs s' vs' r' fuel fuel' I F. destruct fuel as [|fuel].
   - pattern_match. by left.
@@ -544,12 +550,12 @@ Proof.
   - pattern_match. by right.
   - by destruct f; explode_and_simplify; pattern_match; right.
   - explode_and_simplify; try by pattern_match; right.
-    destruct run_step_with_fuel as [[s'' vs''] r''] eqn: E.
+    destruct run_step_base as [[s'' vs''] r''] eqn: E.
     eapply run_step_fuel_increase_aux in E; [|by apply I|..] => //. destruct E as [E|E].
     + subst. pattern_match. by left.
     + rewrite E. by right.
   - explode_and_simplify; try by pattern_match; right.
-    destruct run_step_with_fuel as [[s'' vs''] r''] eqn: E.
+    destruct run_step_base as [[s'' vs''] r''] eqn: E.
     eapply run_step_fuel_increase_aux in E; [|by apply I|..] => //. destruct E as [E|E].
     + subst. pattern_match. by left.
     + rewrite E. by right.
@@ -557,9 +563,9 @@ Qed.
 
 Lemma run_step_fuel_increase : forall d i tt s vs r fuel fuel',
   fuel <= fuel' ->
-  run_step_with_fuel fuel d i tt = (s, vs, r) ->
+  run_step_base fuel d i tt = (s, vs, r) ->
   r = RS_crash C_exhaustion
-  \/ run_step_with_fuel fuel' d i tt = (s, vs, r).
+  \/ run_step_base fuel' d i tt = (s, vs, r).
 Proof.
   move=> d i [[s vs] es] s' vs' r' fuel fuel' I. apply: run_step_fuel_increase_aux => //.
   apply: TProp.forall_Forall => e Ie.
@@ -590,7 +596,7 @@ Local Lemma run_step_fuel_enough_aux : forall d i s vs es s' vs' r',
   run_step d i (s, vs, es) = (s', vs', r') ->
   r' <> RS_crash C_exhaustion.
 Proof.
-  move=> d i s vs es s' vs' r' F. rewrite/run_step/interpreter.run_step.
+  move=> d i s vs es s' vs' r' F. rewrite /run_step /interpreter.run_step.
   destruct run_step_fuel eqn: E => //=.
   destruct (split_vals_e es) as [lconst les] eqn:HSplitVals.
   apply split_vals_e_v_to_e_duality in HSplitVals.
@@ -628,10 +634,10 @@ Proof.
   - by pattern_match.
   - by destruct f; explode_and_simplify; pattern_match.
   - rename l0 into es2.
-    match goal with |- context [ run_step_with_fuel ?fuel _ _ _ ] => set f := fuel end.
+    match goal with |- context [ run_step_base ?fuel _ _ _ ] => set f := fuel end.
     assert (run_step_fuel (tt_s, tt_vs, es2) <= f).
     {
-      apply/leP. rewrite/f /=.
+      apply/leP. rewrite /f /=.
       move: (max_fold_left_run_step_fuel es2). clear. by lias.
     }
     explode_and_simplify; try by pattern_match.
@@ -644,10 +650,10 @@ Proof.
     + by [].
   - (* LATER: This proof might be factorised somehow. *)
     rename l into vs. rename l0 into es.
-    match goal with |- context [ run_step_with_fuel ?fuel _ _ _ ] => set f := fuel end.
+    match goal with |- context [ run_step_base ?fuel _ _ _ ] => set f := fuel end.
     assert (run_step_fuel (tt_s, vs, es) <= f).
     {
-      apply/leP. rewrite/f /=.
+      apply/leP. rewrite /f /=.
       move: (max_fold_left_run_step_fuel es). clear. by lias.
     }
     explode_and_simplify; try by pattern_match.
@@ -668,17 +674,21 @@ Proof.
   apply: TProp.forall_Forall => e Ie.
   move=> >. by apply: run_one_step_fuel_enough.
 Qed.
+*)
+
+(* TODO: Temporary commenting out everything, for compilation.
+   These need to be updated to they Interaction Tree way of doing proofs.
 
 (** If the result of the interpreter is a [RS_break], then we were executing
   either a [Br] or a [Label] instruction, which itself returned a [RS_break]. **)
 Local Lemma rs_break_trace_bool: forall fuel d i s vs es s' vs' n es',
-  run_step_with_fuel fuel.+2 d i (s, vs, es)
+  run_step_base fuel.+2 d i (s, vs, es)
   = (s', vs', RS_break n es') -> 
   let: (ves, es'') := split_vals_e es in
   exists e es2 ln les es3, (es'' == e :: es2) &&
    ((e == Basic (Br n)) && ((s', vs', es') == (s, vs, rev ves)) ||
     (e == Label ln les es3) &&
-     ((run_step_with_fuel fuel d i (s, vs, es3))
+     ((run_step_base fuel d i (s, vs, es3))
       == (s', vs', RS_break n.+1 es'))).
 Proof.
   move => fuel d i s vs es s' vs' n es' /= H.
@@ -699,24 +709,24 @@ Proof.
     apply/andP. split => //.
     apply/eqP.
     move:H. explode_and_simplify.
-    destruct run_step_with_fuel as [[s'' vs''] r''] eqn:HDestruct.
+    destruct run_step_base as [[s'' vs''] r''] eqn:HDestruct.
     destruct r'' as [ |n' rvs'| |]=> //. destruct n'; last by pattern_match.
     by destruct (n0 <= length rvs').
   - (* Local *)
     move:H. explode_and_simplify.
-    destruct run_step_with_fuel as [[s'' vs''] r''] eqn:HDestruct.
+    destruct run_step_base as [[s'' vs''] r''] eqn:HDestruct.
     destruct r'' as [ | |rvs'|]=> //. by destruct (n0 <= length rvs').
 Qed.
 
 (** Similar to [rs_break_trace_bool], but in [Prop]. **)
 Lemma rs_break_trace: forall fuel d i s vs es s' vs' n es',
-  run_step_with_fuel fuel.+2 d i (s, vs, es)
+  run_step_base fuel.+2 d i (s, vs, es)
   = (s', vs', RS_break n es') -> 
   let: (ves, es'') := split_vals_e es in
   exists e es2 ln les es3, (es'' = e :: es2) /\
    ((e = Basic (Br n)) /\ ((s, vs, es') = (s', vs', rev ves)) \/
     (e = Label ln les es3) /\
-    ((run_step_with_fuel fuel d i (s, vs, es3))
+    ((run_step_base fuel d i (s, vs, es3))
      = (s', vs', RS_break n.+1 es'))).
 Proof.
   move => fuel d i s vs es s' vs' n es' H.
@@ -735,14 +745,14 @@ Qed.
 (** If the result of the interpreter is a [RS_return], then we were executing
   either a [Basic Return] or [Label] instruction, which itself returned a [RS_return]. **)
 Lemma rs_return_trace: forall fuel d i s vs es s' vs' rvs,
-  run_step_with_fuel fuel.+2 d i (s, vs, es)
+  run_step_base fuel.+2 d i (s, vs, es)
   = (s', vs', RS_return rvs) ->
   let: (ves, es') := split_vals_e es in
   exists e es'' ln les es2,
     (es' = e :: es'') /\
     (e = Basic Return /\ (s, vs, rvs) = (s', vs', rev ves) \/
      (e = Label ln les es2 /\
-      run_step_with_fuel fuel d i (s, vs, es2)
+      run_step_base fuel d i (s, vs, es2)
       = (s', vs', RS_return rvs))).
 Proof.
   move => fuel d i s vs es s' vs' rvs /= H.
@@ -761,13 +771,13 @@ Proof.
     exists (Label n l l0). exists es2'. exists n. exists l. exists l0.
     split => //. right. split => //.
     move:H. explode_and_simplify.
-    destruct run_step_with_fuel as [[s'' vs''] r''] eqn:HDestruct => //.
+    destruct run_step_base as [[s'' vs''] r''] eqn:HDestruct => //.
     destruct r'' as [ |n' rvs'| |]=> //; try pattern_match.
     destruct n' => //.
     by destruct (n <= length rvs').
   - (* Local *)
     move:H. explode_and_simplify.
-    destruct run_step_with_fuel as [[s'' vs''] r''] eqn:HDestruct => //.
+    destruct run_step_base as [[s'' vs''] r''] eqn:HDestruct => //.
     destruct r'' as [ | |rvs'| ]=> //; try pattern_match.
     by destruct (n <= length rvs').
 Qed.
@@ -775,7 +785,7 @@ Qed.
 (** Variants relating the result with [lfilledInd] (no longer used). **)
 
 Lemma rs_break_lfilled: forall fuel d i s vs es s' vs' n es',
-  run_step_with_fuel fuel.+2 d i (s, vs, es)
+  run_step_base fuel.+2 d i (s, vs, es)
   = (s', vs', RS_break n es') -> 
   let: (ves, es'') := split_vals_e es in
   exists e es2 ln les es3, es'' = e :: es2 /\
@@ -786,7 +796,7 @@ Lemma rs_break_lfilled: forall fuel d i s vs es s' vs' n es',
     (e = Label ln les es3 /\ 
      (forall k lh les', lfilledInd k lh les' es3 ->
          lfilledInd k.+1 (LRec (v_to_e_list ves) ln les lh es2) les' es) /\
-     run_step_with_fuel fuel d i (s, vs, es3)
+     run_step_base fuel d i (s, vs, es3)
      = (s', vs', RS_break n.+1 es')
    )).
 Proof.
@@ -808,7 +818,7 @@ Proof.
 Qed.
 
 Lemma rs_return_lfilled: forall fuel d i s vs es s' vs' rvs,
-  run_step_with_fuel fuel.+2 d i (s, vs, es)
+  run_step_base fuel.+2 d i (s, vs, es)
   = (s', vs', RS_return rvs) -> 
   let: (ves, es'') := split_vals_e es in
   exists e es2 ln les es3, (es'' = e :: es2) /\
@@ -819,7 +829,7 @@ Lemma rs_return_lfilled: forall fuel d i s vs es s' vs' rvs,
     (e = Label ln les es3 /\ 
      (forall k lh les', lfilledInd k lh les' es3 ->
         lfilledInd k.+1 (LRec (v_to_e_list ves) ln les lh es2) les' es)) /\
-     run_step_with_fuel fuel d i (s, vs, es3)
+     run_step_base fuel d i (s, vs, es3)
      = (s', vs', RS_return rvs)
    ).
 Proof.
@@ -845,13 +855,13 @@ Qed.
     The lemma is stated in this way to make application of other lemmas
   easier. **)
 Lemma rs_break_takes_2_fuel: forall fuel d i s vs es s' vs' n es',
-  run_step_with_fuel fuel d i (s, vs, es)
+  run_step_base fuel d i (s, vs, es)
   = (s', vs', RS_break n es') ->
   exists fuel', fuel = fuel'.+2 .
 Proof.
   destruct fuel; first by [].
   move => d i s vs es s' vs' n es'.
-  unfold run_step_with_fuel.
+  unfold run_step_base.
   destruct (split_vals_e es) as [vs2 es2] eqn:HSplit.
   apply split_vals_e_v_to_e_duality in HSplit.
   destruct es2 as [|e es2'] => //.
@@ -860,13 +870,13 @@ Proof.
 Qed.                   
 
 Lemma rs_return_takes_2_fuel: forall fuel d i s vs es s' vs' rvs,
-  run_step_with_fuel fuel d i (s, vs, es)
+  run_step_base fuel d i (s, vs, es)
   = (s', vs', RS_return rvs) ->
   exists fuel', fuel = fuel'.+2 .
 Proof.
   destruct fuel; first by [].
   move => d i s vs es s' vs' rvs.
-  unfold run_step_with_fuel.
+  unfold run_step_base.
   destruct (split_vals_e es) as [vs2 es2] eqn:HSplit.
   apply split_vals_e_v_to_e_duality in HSplit.
   destruct es2 as [|e es2'] => //.
@@ -887,7 +897,7 @@ Inductive Label_sequence: nat -> seq administrative_instruction -> administrativ
   | LS_Label: forall k m vs0 e0 vs es bs es',
            const_list vs ->
            Label_sequence k vs0 e0 bs ->
-           Label_sequence (k.+1) vs0 e0 (vs ++ [::Label m es' bs] ++ es).
+           Label_sequence k.+1 vs0 e0 (vs ++ [::Label m es' bs] ++ es).
 
 (** [Label_sequence] is in fact very similar to lfilled. **)
 Lemma Label_sequence_lfilled_exists: forall k vs e bs,
@@ -924,7 +934,7 @@ Qed.
   [Label _ _ _] cannot take place infinitely often. In fact we even know exactly 
   how many times the recursive case takes place. **)
 Lemma rs_break_wellfounded: forall fuel d i s vs es s' vs' n es',
-  run_step_with_fuel fuel d i (s, vs, es)
+  run_step_base fuel d i (s, vs, es)
   = (s', vs', RS_break n es') ->
   s = s' /\ vs = vs' /\ (exists k m vs0, k+n=m /\ Label_sequence k vs0 (Basic (Br m)) es /\
   v_to_e_list es' = rev vs0). 
@@ -947,14 +957,14 @@ Proof.
     + apply IHfuel in HLabelR.
       destruct HLabelR as [Hs [Hvs [k [m [vs0 [HSum [HLS HES']]]]]]]. subst.
       repeat split => //.
-      exists (k.+1). exists (k.+1+n). exists vs0. repeat split => //.
+      exists k.+1. exists (k.+1+n). exists vs0. repeat split => //.
       apply LS_Label => //. by apply v_to_e_is_const_list.
       replace (k.+1+n) with (k+n.+1) => //.
       by lias.
 Qed.
 
 Lemma rs_return_wellfounded: forall fuel d i s vs es s' vs' es',
-  run_step_with_fuel fuel d i (s, vs, es)
+  run_step_base fuel d i (s, vs, es)
   = (s', vs', RS_return es') ->
   s = s' /\ vs = vs' /\ (exists k vs0, Label_sequence k vs0 (Basic Return) es /\
   v_to_e_list es' = rev vs0). 
@@ -977,13 +987,13 @@ Proof.
     + apply IHfuel in HLabelR.
       destruct HLabelR as [Hs [Hvs [k [vs0 [HLS HES']]]]]. subst.
       repeat split => //.
-      exists (k.+1). exists vs0. repeat split => //.
+      exists k.+1. exists vs0. repeat split => //.
       apply LS_Label => //. by apply v_to_e_is_const_list.
 Qed.
 
 (** Main proof for the [RS_break] case. **)
 Lemma reduce_label_break: forall fuel d i s vs es es' s' vs' es'' n,
-  run_step_with_fuel fuel d i (s, vs, es') =
+  run_step_base fuel d i (s, vs, es') =
   (s', vs', RS_break 0 es'') ->
   n <= size es'' ->
   reduce s vs ([:: Label n es es']) i s' vs'
@@ -1027,7 +1037,7 @@ Proof.
 Qed.
       
 Lemma reduce_label_return: forall fuel d i s vs ess s' vs' vs'' vs2 n j,
-  run_step_with_fuel fuel d j (s, vs, ess) =
+  run_step_base fuel d j (s, vs, ess) =
   (s', vs', RS_return vs'') ->
   n <= size vs'' ->
   reduce s vs2 ([:: Local n j vs ess]) i s' vs2
@@ -1070,8 +1080,8 @@ Proof.
       * by lias.
 Qed.
 
-Local Lemma run_step_soundness_aux : forall fuel d i s vs es s' vs' es',
-  run_step_with_fuel fuel d i (s, vs, es)
+Lemma run_step_soundness_aux : forall fuel d i s vs es s' vs' es',
+  run_step_base fuel d i (s, vs, es)
   = (s', vs', RS_normal es') ->
   reduce s vs es i s' vs' es'.
 Proof.
@@ -1087,7 +1097,7 @@ Proof.
     - move/orP in if_expr0. inversion if_expr0 => //=.
       + move/eqP in H0. destruct lconst => //=. by destruct les'.
       + move/eqP in H0. by destruct lconst.
-    - rewrite/lfilled/lfill. rewrite v_to_e_is_const_list. show_list_equality.
+    - rewrite /lfilled /lfill. rewrite v_to_e_is_const_list. show_list_equality.
   }
   destruct fuel as [|fuel] => //=. destruct e as [b| |f|n es1 es2|n j vls ess] => /=.
     { (** [Basic b] **) (* TODO: Separate this case as a lemma. *)
@@ -1229,23 +1239,24 @@ Proof.
     { (** [Trap] **)
       by pattern_match.
     }
-    { (** [Callcl] **)
+    { (** [Invoke] **)
       destruct f => //=.
       - (** [Func_native] **)
         explode_and_simplify. pattern_match. stack_frame. auto_frame.
-        apply: r_callcl_native => //=.
+        apply: r_invoke_native => //=.
         simplify_lists. by rewrite subKn.
       - (** [Func_host] **)
         explode_and_simplify; pattern_match; stack_frame; auto_frame.
-        + apply: r_callcl_host_success => //=.
-          simplify_lists. by rewrite subKn.
-        + apply: r_callcl_host_failure => //=.
-          explode_and_simplify. by rewrite subKn.
+        (* TODO: why did this case disappear?
+        + apply: r_invoke_host_success => //=.
+          simplify_lists. by rewrite subKn. *)
+        + { apply: r_invoke_host_failure => //=.
+        explode_and_simplify. by rewrite subKn. }
     }
     { (** [Label] **)
       explode_and_simplify; try (pattern_match; auto_frame).
       + apply: r_simple. by apply: rs_label_trap.
-      + destruct run_step_with_fuel as [[s'' vs''] r] eqn: EH.
+      + destruct run_step_base as [[s'' vs''] r] eqn: EH.
         destruct r as [|nd es''| |es''] => //.
         * (** [RS_break] **)
           destruct nd => //. explode_and_simplify. pattern_match. auto_frame.
@@ -1268,7 +1279,7 @@ Proof.
     { (** [Local] **)
       explode_and_simplify; try (pattern_match; auto_frame).
       + apply: r_simple. by apply: rs_local_trap.
-      + destruct run_step_with_fuel as [[s'' vs''] r] eqn: EH.
+      + destruct run_step_base as [[s'' vs''] r] eqn: EH.
         destruct r as [| |vs'''|es''] => //.
         * (** [RS_return] **)
           explode_and_simplify. pattern_match. auto_frame.
@@ -1279,11 +1290,15 @@ Proof.
     }
 Qed.
 
+(* TODO: Rephrase. It will look like [eutt reduce].
+  See ITree/tutorial/Imp2AsmCorrectness.v *)
 Theorem run_step_soundness : forall d i s vs es s' vs' es',
   run_step d i (s, vs, es) = (s', vs', RS_normal es') ->
   reduce s vs es i s' vs' es'.
 Proof.
   move=> d i s vs es s' vs' es'. by apply: run_step_soundness_aux.
 Qed.
+
+*)
 
 End Host.

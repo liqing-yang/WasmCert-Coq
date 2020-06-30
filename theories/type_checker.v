@@ -277,7 +277,7 @@ Fixpoint check_single (C : t_context) (be : basic_instruction) (ts : checker_typ
       end
     else CT_bot
   | Call_indirect i =>
-    if (tc_table C != None) && (i < length (tc_types_t C))
+    if i < length C.(tc_types_t)
     then
       match List.nth_error (tc_func_t C) i with
       | None => CT_bot (* Isa mismatch *)
@@ -329,19 +329,19 @@ Fixpoint check_single (C : t_context) (be : basic_instruction) (ts : checker_typ
       end
     else CT_bot
   | Load t tp_sx a off =>
-    if (tc_memory C != None) && load_store_t_bounds a (option_projl tp_sx) t
+    if (C.(tc_memory) != nil) && load_store_t_bounds a (option_projl tp_sx) t
     then type_update ts [::CTA_some T_i32] (CT_type [::t])
     else CT_bot
   | Store t tp a off =>
-    if (tc_memory C != None) && load_store_t_bounds a tp t
+    if (C.(tc_memory) != nil) && load_store_t_bounds a tp t
     then type_update ts [::CTA_some T_i32; CTA_some t] (CT_type [::])
     else CT_bot
   | Current_memory =>
-    if tc_memory C != None
+    if C.(tc_memory) != nil
     then type_update ts [::] (CT_type [::T_i32])
     else CT_bot
   | Grow_memory =>
-    if tc_memory C != None
+    if C.(tc_memory) != nil
     then type_update ts [::CTA_some T_i32] (CT_type [::T_i32])
     else CT_bot
   end.
@@ -375,27 +375,42 @@ Fixpoint collect_at_inds A (l : seq A) (ns : seq nat) : seq A :=
   end.
 
 (* TODO: This definition is kind of a duplication of inst_typing, to avoid more dependent definitions becoming Prop downstream *)
-Definition inst_type_check (s : store_record) (i : instance) : t_context :=
-  Build_t_context
-    (i_types i)
-    (collect_at_inds (map cl_type (s_funcs s)) (i_funcs i))
-    (collect_at_inds (map (fun glob => Build_global_type (g_mut glob) (typeof (g_val glob))) (s_globs s)) (i_globs i))
-    (option_map (@length (option function_closure)) (match (i_tab i) with | Some n => List.nth_error (s_tab s) n | None => None end))
-    (option_map (@length (byte)) (option_bind (List.nth_error (s_memory s)) (i_memory i)))
-    [::]
-    [::]
-    None.
+Definition inst_type_check (s : store_record) (i : instance) : t_context := {|
+  (* TODO: ported this from option to list, but not too sure it's right *)
+  tc_types_t := i_types i;
+  tc_func_t := collect_at_inds (map cl_type (s_funcs s)) (i_funcs i);
+  tc_global :=
+    collect_at_inds
+      (map (fun glob => {| tg_mut := glob.(g_mut); tg_t := typeof glob.(g_val) |}) s.(s_globals))
+      i.(i_globs);
+  tc_table :=
+    collect_at_inds
+      (map
+        (fun t =>
+          (* TODO: this is probably wrong? *)
+          {| tt_limits := {| lim_min := 0; lim_max := Some (List.length t.(table_data)) |}; tt_elem_type := ELT_funcref |})
+          s.(s_tables))
+      i.(i_tab);
+  tc_memory :=
+    collect_at_inds
+      (map
+        (fun m =>
+          (* TODO: this is probably wrong? *)
+          {| lim_min := 0; lim_max := Some (List.length m.(mem_data)) |})
+        s.(s_mems))
+      i.(i_memory);
+  tc_local := nil;
+  tc_label := nil;
+  tc_return := None;
+|}.
 
 Definition cl_type_check (s : store_record) (cl : function_closure) : bool :=
   match cl with
   | Func_native i tf ts es =>
-    match tf with
-    | Tf t1s t2s =>
-      let C := inst_type_check s i in
-      let C' := upd_local_label_return C (app (tc_local C) (app t1s ts)) (app [::t2s] (tc_label  C)) (Some t2s) in
-      b_e_type_checker C' es (Tf [::] t2s)
-    end
-(*| cl_typing_native : forall i S C ts t1s t2s es tf,*)
+    let '(Tf t1s t2s) := tf in
+    let C := inst_type_check s i in
+    let C' := upd_local_label_return C (app (tc_local C) (app t1s ts)) (app [::t2s] (tc_label  C)) (Some t2s) in
+    b_e_type_checker C' es (Tf [::] t2s)
   | Func_host tf h => true
   end.
 
@@ -414,15 +429,15 @@ Inductive e_typing : store_record -> t_context -> seq administrative_instruction
   e_typing s C [::Trap] tf
 | ety_local : forall s C n i vs es ts,
   s_typing s (Some ts) i vs es ts ->
-  Nat.eqb (length ts) n ->
+  length ts = n ->
   e_typing s C [::Local n i vs es] (Tf [::] ts)
-| ety_callcl : forall s C cl tf,
+| ety_invoke : forall s C cl tf,
   cl_typing s cl tf ->
-  e_typing s C [::Callcl cl] tf
-| ety_lanel : forall s C e0s es ts t2s n,
+  e_typing s C [::Invoke cl] tf
+| ety_label : forall s C e0s es ts t2s n,
   e_typing s C e0s (Tf ts t2s) ->
   e_typing s (upd_label C ([::ts] ++ tc_label C)) es (Tf [::] t2s) ->
-  Nat.eqb (length ts) n ->
+  length ts = n ->
   e_typing s C [::Label n e0s es] (Tf [::] t2s)
 
 with s_typing : store_record -> option (seq value_type) -> instance -> seq value -> seq administrative_instruction -> seq value_type -> Prop :=
@@ -435,11 +450,19 @@ with s_typing : store_record -> option (seq value_type) -> instance -> seq value
   s_typing s rs i vs es ts
 .
 
-Definition tab_agree (s : store_record) (tcl : option function_closure) : bool :=
-  match tcl with
+Definition tabcl_agree (s : store_record) (tcl_index : option nat) : bool :=
+  match tcl_index with
   | None => true
-  | Some cl => cl_type_check s cl
+  | Some n => let tcl := List.nth_error (s_funcs s) n in
+    match tcl with
+    | None => true
+    | Some cl => cl_type_check s cl
+    end
   end.
+
+Definition tab_agree (s: store_record) (t: tableinst): bool :=
+  let t_data := table_data t in
+    all (tabcl_agree s) (t_data).
 
 Definition mem_agree bs m : bool :=
   m <= mem_size bs.
@@ -448,7 +471,7 @@ Definition store_typing (s : store_record) : bool :=
   match s with
   | Build_store_record fs tclss bss gs =>
     all (fun f => cl_type_check s f) fs &&
-    all (tab_agree s) (flatten tclss)
+    all (tab_agree s) (tclss)
   end.
 
 Inductive config_typing : instance -> store_record -> seq value -> seq administrative_instruction -> seq value_type -> Prop :=

@@ -16,5 +16,7 @@ install:
   - esy install
 
 script:
-  - esy
+  - make travis-hook
+  - esy test
+  - esy doc
 

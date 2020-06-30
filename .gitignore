@@ -5,12 +5,15 @@
 
 .merlin
 *.install
+.vscode/settings.json
 
 *~
 \#*\#
 *.swp
 
 *.vo
+*.vos
+*.vok
 *.glob
 *.aux
 .lia.cache
@@ -18,4 +21,9 @@
 
 /theories/extract.ml
 /theories/extract.mli
+
+.saves
+
+/wasm_interpreter
+/history.txt
 

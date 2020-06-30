@@ -1,9 +1,10 @@
 (lang dune 2.5)
 (using coq 0.2)
+(using mdx 0.1)
 (name Wasm)
 
 (generate_opam_files true)
-(license CeCILL-B)
+(license MIT)
 (source (github rems-project/wasm_coq))
 
 (package
