@@ -19,14 +19,14 @@
 		"test": "dune runtest"
 	},
 	"dependencies": {
-		"ocaml": "4.9.0",
-		"@opam/coq": "8.10.1",
+		"ocaml": "4.10.0",
+		"@opam/coq": "8.11.1",
 		"coq-flocq": "3.2.0",
     "compcert": "github:Mbodin/CompCert#b004de92d4b2e4a1190855e2190485a89250e366",
 		"@opam/coq-stdpp": "*",
 		"coq-iris": "*",
 		"coq-mathcomp-ssreflect": "*",
-		"coq-itree": "github:Mbodin/InteractionTrees#238cbdd6dce3d3f3f9431f1d0c6117ba42674007",
+		"coq-itree": "github:Mbodin/InteractionTrees#cf7fd6561f652c8f463167178ad75977fdeb9bbc",
 		"parseque": "github:Mbodin/parseque#11685019ec17d62480fe6f56a45f4a97f739f00d",
 		"coq-ext-lib": "*",
 		"strong-induction": "github:Mbodin/strong-induction#0779e72f0f4c371311b60009606c34fc1f8cd01a",
@@ -81,11 +81,11 @@
 			}
 		},
 		"coq-iris": {
-			"source": "git:https://gitlab.mpi-sws.org/iris/iris.git#69dfcc7191e4cd1954fd6a00e192ad0ebb0697b9",
+			"source": "git:https://gitlab.mpi-sws.org/iris/iris.git#e1f6efa017c745791718cab075d7170720b5b5b2",
 			"override": {
 				"buildsInSource": true,
 				"dependencies": {
-					"@opam/coq": "8.10.1",
+					"@opam/coq": "*",
 					"@opam/coq-stdpp": "*",
 					"ocaml": "*"
 				},
@@ -104,10 +104,10 @@
 			}
 		},
 		"@opam/coq-stdpp": {
-			"source": "git:https://gitlab.mpi-sws.org/iris/stdpp.git#6eb05dfc40feef58063bb537fb742eb16bbf86d1",
+			"source": "git:https://gitlab.mpi-sws.org/iris/stdpp.git#e61c21045ec102f8e617cb9d386cfd9bb8456a15",
 			"override": {
 				"dependencies": {
-					"@opam/coq": "8.10.1",
+					"@opam/coq": "*",
 					"ocaml": "*"
 				},
 				"buildEnv": {
