@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# To ease the generation of the COQPATH and VSCODESETTINGS in package.json
+# To ease the generation of the COQPATH and VSCODESETTINGS environment variables in package.json
 use strict ;
 use warnings ;
 
@@ -16,7 +16,7 @@ my %packages = (
 	) ;
 
 my $coqpath = "" ;
-foreach my $key (keys %packages){
+foreach my $key (sort keys %packages){
 	if ($coqpath eq ""){
 		$coqpath .= $packages{$key} ;
 	} else {

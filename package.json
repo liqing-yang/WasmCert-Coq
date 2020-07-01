@@ -8,8 +8,8 @@
 		"buildEnv": {
 			"COQBIN": "#{@opam/coq.bin}/",
 			"COQLIB": "#{@opam/coq.lib}/coq/",
-			"COQPATH": "#{compcert.install}/coq:#{@opam/coq-stdpp.install}/user-contrib:#{coq-mathcomp-ssreflect.install}/user-contrib:#{parseque.install}/lib/coq/user-contrib:#{coq-flocq.install}/coq:#{coq-iris.install}/user-contrib:#{strong-induction.install}/lib/coq/user-contrib:#{coq-itree.install}/user-contrib:#{coq-ext-lib.install}/user-contrib",
-			"VSCODESETTINGS": "{\"coqtop.binPath\":\"#{@opam/coq.root}/bin\",\"coqtop.args\":[\"-coqlib\",\"#{@opam/coq.root}\",\"-R\",\"#{compcert.install}/coq\",\"compcert\",\"-R\",\"#{@opam/coq-stdpp.install}/user-contrib\",\"stdpp\",\"-R\",\"#{coq-mathcomp-ssreflect.install}/user-contrib\",\"mathcomp\",\"-R\",\"#{parseque.install}/lib/coq/user-contrib\",\"parseque\",\"-R\",\"#{coq-flocq.install}/coq\",\"Flocq\",\"-R\",\"#{coq-iris.install}/user-contrib\",\"iris\",\"-R\",\"#{strong-induction.install}/lib/coq/user-contrib\",\"StrongInduction\",\"-R\",\"#{coq-itree.install}/user-contrib\",\"ITree\",\"-R\",\"#{coq-ext-lib.install}/user-contrib\",\"ExtLib\",\"-R\",\"#{self.root}/_build/default/theories\",\"\"]}"
+			"COQPATH": "#{coq-ext-lib.install}/user-contrib:#{coq-flocq.install}/coq:#{coq-itree.install}/user-contrib:#{strong-induction.install}/lib/coq/user-contrib:#{compcert.install}/coq:#{coq-iris.install}/user-contrib:#{coq-mathcomp-ssreflect.install}/user-contrib:#{parseque.install}/lib/coq/user-contrib:#{@opam/coq-stdpp.install}/user-contrib",
+			"VSCODESETTINGS": "{\"coqtop.binPath\":\"#{@opam/coq.root}/bin\",\"coqtop.args\":[\"-coqlib\",\"#{@opam/coq.root}\",\"-R\",\"#{strong-induction.install}/lib/coq/user-contrib\",\"StrongInduction\",\"-R\",\"#{coq-flocq.install}/coq\",\"Flocq\",\"-R\",\"#{parseque.install}/lib/coq/user-contrib\",\"parseque\",\"-R\",\"#{@opam/coq-stdpp.install}/user-contrib\",\"stdpp\",\"-R\",\"#{coq-mathcomp-ssreflect.install}/user-contrib\",\"mathcomp\",\"-R\",\"#{coq-iris.install}/user-contrib\",\"iris\",\"-R\",\"#{coq-itree.install}/user-contrib\",\"ITree\",\"-R\",\"#{coq-ext-lib.install}/user-contrib\",\"ExtLib\",\"-R\",\"#{compcert.install}/coq\",\"compcert\",\"-R\",\"#{self.root}/_build/default/theories\",\"\"]}"
 		},
 		"build": "make"
 	},
@@ -33,7 +33,8 @@
 		"@opam/cmdliner": "1.0.4",
     "@opam/dune": "2.6.0",
 		"@opam/linenoise": "*",
-		"@opam/mdx": "*"
+		"@opam/mdx": "*",
+		"@opam/odoc": "*"
 	},
 	"devDependencies": {},
 	"resolutions": {
