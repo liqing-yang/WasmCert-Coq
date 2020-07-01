@@ -19,7 +19,7 @@
 		"test": "dune runtest"
 	},
 	"dependencies": {
-		"ocaml": "~4.9",
+		"ocaml": "4.9.0",
 		"@opam/coq": "8.10.1",
 		"coq-flocq": "3.2.0",
     "compcert": "github:Mbodin/CompCert#b004de92d4b2e4a1190855e2190485a89250e366",
@@ -27,11 +27,11 @@
 		"coq-iris": "*",
 		"coq-mathcomp-ssreflect": "*",
 		"coq-itree": "github:Mbodin/InteractionTrees#238cbdd6dce3d3f3f9431f1d0c6117ba42674007",
-		"parseque": "github:Mbodin/parseque#22b98cc4235266d3c3d2b2eef7ff95b677aaf21c",
+		"parseque": "github:Mbodin/parseque#11685019ec17d62480fe6f56a45f4a97f739f00d",
 		"coq-ext-lib": "*",
 		"strong-induction": "github:Mbodin/strong-induction#0779e72f0f4c371311b60009606c34fc1f8cd01a",
 		"@opam/cmdliner": "1.0.4",
-    "@opam/dune": "~2.6",
+    "@opam/dune": "2.6.0",
 		"@opam/linenoise": "*",
 		"@opam/mdx": "*"
 	},
@@ -59,11 +59,11 @@
 			}
 		},
 		"coq-flocq": {
-			"source": "git:https://gitlab.inria.fr/flocq/flocq.git#a9be51660cd865d323b0b3bbb9faa793856ea0de",
-			"version": "3.2.0",
+			"source": "git:https://gitlab.inria.fr/flocq/flocq.git#5429d0360ab8c401d0df02e4233eec90d6a71a38",
+			"version": "3.3.1",
 			"override": {
 				"dependencies": {
-					"@opam/coq": "8.10.1",
+					"@opam/coq": "*",
 					"ocaml": "*"
 				},
 				"buildEnv": {
@@ -73,7 +73,7 @@
 					"COQPATH": "#{@opam/coq.lib}/coq/user-contrib"
 				},
 				"build": [
-					[ "./autogen.sh" ],
+					[ "autoconf" ],
 					[ "./configure", "--libdir=#{self.install}/coq/Flocq" ],
 					[ "./remake", "--jobs=2" ],
 					[ "./remake", "install" ]
