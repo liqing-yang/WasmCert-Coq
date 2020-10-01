@@ -282,7 +282,6 @@ From iris.bi.lib Require Import fractional.
 From iris.base_logic.lib Require Export gen_heap proph_map.
 From iris.program_logic Require Export weakestpre total_weakestpre.
 From iris.program_logic Require Import ectx_lifting total_ectx_lifting.
-From Wasm Require Export iris_instantiation.
 
 
 From iris.heap_lang Require Import locations.
