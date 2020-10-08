@@ -7,16 +7,13 @@
    maybe N? maybe a 32-bit word type? *)
 
 Require Import BinNat.
-From Wasm Require array.
-From Wasm Require Import common.
-From Wasm Require Export numerics bytes.
+From Wasm Require Import common numerics bytes memory.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From compcert Require common.Memdata.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
-
 
 (** * Basic Datatypes **)
 
@@ -51,24 +48,6 @@ Definition serialise_f64 (f : f64) : bytes :=
 Record limits : Type := {
   lim_min : N; (* TODO: should be u32 *)
   lim_max : option N; (* TODO: should be u32 *)
-}.
-
-Module Byte_Index <: array.Index_Sig.
-Definition Index := N.
-Definition Value := byte.
-Definition index_eqb := N.eqb.
-End Byte_Index.
-
-Module Byte_array := array.Make Byte_Index.
-
-Record data_vec : Type := {
-  dv_length : N;
-  dv_array : Byte_array.array;
-}.
-
-Record memory : Type := {
-  mem_data : data_vec;
-  mem_max_opt: option N; (* TODO: should be u32 *)
 }.
 
 Definition memory_type := limits.
@@ -401,19 +380,6 @@ Record global : Type := {
   g_val : value;
 }.
 
-(** std-doc:
-The store represents all global state that can be manipulated by WebAssembly
-programs. It consists of the runtime representation of all instances of
-functions, tables, memories, and globals that have been allocated during the
-life time of the abstract machine
-*)
-Record store_record : Type := (* s *) {
-  s_funcs : list function_closure;
-  s_tables : list tableinst;
-  s_mems : list memory;
-  s_globals : list global;
-}.
-
 Record frame : Type := (* f *) {
   f_locs: list value;
   f_inst: instance
@@ -543,12 +509,7 @@ Inductive extern_t : Type :=
 | ET_glob : global_type -> extern_t
 .
 
-
 (** Some types used in the interpreter. **)
-
-Definition config_tuple : Type := store_record * frame * seq administrative_instruction.
-
-Definition config_one_tuple_without_e : Type := store_record * frame * seq value.
 
 Inductive res_crash : Type :=
   | C_error : res_crash
@@ -561,7 +522,37 @@ Inductive res_step : Type :=
   | RS_normal : seq administrative_instruction -> res_step
   .
 
-Definition res_tuple : Type := store_record * frame * res_step.
+Section With_memory.
+Context {Mem_T : Type} `{Memory Mem_T}.
+Record memory : Type := {
+  mem_data : Mem_T;
+  mem_max_opt: option N; (* TODO: should be u32 *)
+}.
+
+(** std-doc:
+The store represents all global state that can be manipulated by WebAssembly
+programs. It consists of the runtime representation of all instances of
+functions, tables, memories, and globals that have been allocated during the
+life time of the abstract machine
+*)
+Record store_record : Type := (* s *) {
+  s_funcs : list function_closure;
+  s_tables : list tableinst;
+  s_mems : list memory;
+  s_globals : list global;
+}.
+
+(** Some types used in the interpreter. **)
+Definition config_tuple : Type :=
+  store_record * frame * seq administrative_instruction.
+
+Definition config_one_tuple_without_e: Type :=
+  store_record * frame * seq value.
+
+Definition res_tuple : Type :=
+  store_record * frame * res_step.
+
+End With_memory.
 
 End Host.
 

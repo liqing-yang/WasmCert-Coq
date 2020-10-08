@@ -1,7 +1,7 @@
 (** Basic operations over Wasm datatypes **)
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
 
-From Wasm Require Import common.
+From Wasm Require Import common memory bytes numerics.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From compcert Require lib.Floats.
 From Wasm Require Export datatypes_properties list_extra.
@@ -15,8 +15,10 @@ Section Host.
 
 Variable host_function : eqType.
 
-Let function_closure := function_closure host_function.
-Let store_record := store_record host_function.
+Section With_memory.
+  Context {Mem_T} `{Memory Mem_T}.
+Let store_recordwh := @store_record Mem_T host_function.
+Let function_closurewh := function_closure host_function.
 Let administrative_instruction := administrative_instruction host_function.
 Let lholed := lholed host_function.
 
@@ -39,7 +41,7 @@ Definition write_bytes (m : memory) (n : N) (bs : bytes) : memory := {|
   mem_max_opt := m.(mem_max_opt);
 |}.
 
-Definition upd_s_mem (s : store_record) (m : list memory) : store_record := {|
+Definition upd_s_mem (s : store_recordwh) (m : list memory) : store_recordwh := {|
   s_funcs := s.(s_funcs);
   s_tables := s.(s_tables);
   s_mems := m;
@@ -87,7 +89,7 @@ Definition sign_extend (s : sx) (l : nat) (bs : bytes) : bytes :=
   bytes_takefill byte l bytes
 *)
 
-Definition load_packed (s : sx) (m : memory) (n : N) (off : static_offset) (lp : nat) (l : nat) : option bytes :=
+Definition load_packed (s : sx) (m : memory) (n : N) (off : static_offset) (lp : nat) (l : nat) : option bytes.bytes :=
   option_map (sign_extend s l) (load m n off lp).
 
 Definition store (m : memory) (n : N) (off : static_offset) (bs : bytes) (l : nat) : option memory :=
@@ -334,7 +336,7 @@ Definition app_relop (op: relop) (v1: value) (v2: value) :=
 Definition types_agree (t : value_type) (v : value) : bool :=
   (typeof v) == t.
 
-Definition cl_type (cl : function_closure) : function_type :=
+Definition cl_type (cl : function_closurewh) : function_type :=
   match cl with
   | FC_func_native _ tf _ _ => tf
   | FC_func_host tf _ => tf
@@ -349,14 +351,17 @@ Definition option_bind (A B : Type) (f : A -> option B) (x : option A) :=
   | Some y => f y
   end.
 
-Definition stypes (s : store_record) (i : instance) (j : nat) : option function_type :=
+Definition stypes (s : store_recordwh) (i : instance) (j : nat) : option function_type :=
   List.nth_error (inst_types i) j.
 (* TODO: optioned *)
 
-Definition sfunc_ind (s : store_record) (i : instance) (j : nat) : option nat :=
+Definition sfunc_ind (s : store_recordwh) (i : instance) (j : nat) : option nat :=
   List.nth_error (inst_funcs i) j.
 
-Definition sfunc (s : store_record) (i : instance) (j : nat) : option function_closure :=
+Print function_closure.
+Print store_record.
+
+Definition sfunc (s : store_recordwh) (i : instance) (j : nat) : option function_closurewh :=
   option_bind (List.nth_error (s_funcs s)) (sfunc_ind s i j).
 
 Definition sglob_ind (s : store_record) (i : instance) (j : nat) : option nat :=
