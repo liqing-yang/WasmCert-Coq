@@ -7,7 +7,7 @@ From iris.proofmode Require Import tactics.
 From iris.program_logic Require Export weakestpre.
 From iris.base_logic Require Export gen_heap proph_map.
 Require Export iris.
-Require Export datatypes host operations.
+Require Import datatypes host operations memory.
 
 Set Default Proof Using "Type". (* what is this? *)
 
@@ -16,8 +16,9 @@ Close Scope byte_scope.
 Section Host.
 
 Variable host_function : eqType.
+Variable memory_repr : Memory.Exports.memoryType.
 
-Let host := host.host host_function.
+Let host := host.host host_function memory_repr.
 (* FIXME: Let expr := expr host_function. *)
 
 Variable host_instance : host.
@@ -56,7 +57,7 @@ Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
     fork_post _ := True%I;
   }.
 
-Definition xx i := (VAL_int32 (Wasm_int.int_of_Z i32m i)).
+Definition xx i := (VAL_int32 (numerics.Wasm_int.int_of_Z numerics.i32m i)).
 
 (* FIXME: Mismatch on [expr]?
 Definition my_add : expr :=

@@ -2,23 +2,21 @@
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
 
 From mathcomp Require Import ssreflect ssrbool eqtype seq.
-
 From iris.program_logic Require Import language.
+Require Import operations opsem interpreter memory.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Require Import operations opsem interpreter.
-
-
 Section Host.
 
 Variable host_function : eqType.
+Variable memory_repr : Memory.Exports.memoryType.
 
-Let host := host host_function.
+Let host := host host_function memory_repr.
 Let administrative_instruction := administrative_instruction host_function.
-Let store_record := store_record host_function.
+Let store_record := store_record host_function memory_repr.
 Let lholed := lholed host_function.
 
 Let lfilled : nat -> lholed -> list administrative_instruction -> list administrative_instruction -> bool :=
@@ -33,7 +31,7 @@ Let reduce_simple : list administrative_instruction -> list administrative_instr
   @reduce_simple _.
 Let reduce : host_state -> store_record -> frame -> list administrative_instruction ->
              host_state -> store_record -> frame -> list administrative_instruction -> Prop :=
-  @reduce _ _.
+  @reduce _ memory_repr _.
 Let lfill : nat -> lholed -> list administrative_instruction -> option (list administrative_instruction) :=
   @lfill _.
 

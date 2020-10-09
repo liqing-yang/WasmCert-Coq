@@ -3,9 +3,11 @@
 
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From ITree Require Import ITree ITreeFacts.
-From Wasm Require Import common datatypes operations type_checker memory.
+Require Import common datatypes operations type_checker memory.
+Require Import memory_array.
 
 Import Monads.
+From ExtLib Require Import IdentityMonad.
 
 Set Implicit Arguments.
 
@@ -170,8 +172,6 @@ End convert_to_executable_host.
 
 (** ** Dummy host **)
 
-From ExtLib Require Import IdentityMonad.
-
 (** This host provides no function. **)
 
 Module DummyHost : Executable_Host.
@@ -180,7 +180,7 @@ Definition host_function := void.
 Definition host_event := ident.
 Definition host_ret := @ret _ Monad_ident.
 Definition host_bind := @bind _ Monad_ident.
-Require Import memory_array.
+
 Definition memory_repr := array_memoryType.
 Definition store_record := store_record host_function memory_repr.
 Definition host_apply (_ : store_record) (_ : function_type) :=

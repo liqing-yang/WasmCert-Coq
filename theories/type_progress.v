@@ -3,7 +3,7 @@
 
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From Coq Require Import Program.Equality NArith Omega.
-From Wasm Require Export operations typing type_checker datatypes_properties typing opsem properties type_preservation.
+Require Import operations typing type_checker datatypes_properties typing opsem properties type_preservation memory.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -12,36 +12,37 @@ Unset Printing Implicit Defensive.
 Section Host.
 
 Variable host_function : eqType.
+Variable memory_repr : Memory.Exports.memoryType.
 
-Let store_record := store_record host_function.
+Let store_record := store_record host_function memory_repr.
 Let function_closure := function_closure host_function.
 Let administrative_instruction := administrative_instruction host_function.
 
 Let to_e_list : seq basic_instruction -> seq administrative_instruction := @to_e_list _.
 Let to_b_list : seq administrative_instruction -> seq basic_instruction := @to_b_list _.
 Let e_typing : store_record -> t_context -> seq administrative_instruction -> function_type -> Prop :=
-  @e_typing _.
+  @e_typing _ _.
 Let reduce_simple : seq administrative_instruction -> seq administrative_instruction -> Prop :=
   @reduce_simple _.
 Let const_list : seq administrative_instruction -> bool := @const_list _.
 Let lholed := lholed host_function.
 Let lfilled : depth -> lholed -> seq administrative_instruction -> seq administrative_instruction -> bool :=
   @lfilled _.
-Let sfunc : store_record -> instance -> nat -> option function_closure := @sfunc _.
-Let sglob : store_record -> instance -> nat -> option global := @sglob _.
-Let smem_ind : store_record -> instance -> option nat := @smem_ind _.
+Let sfunc : store_record -> instance -> nat -> option function_closure := @sfunc _ _.
+Let sglob : store_record -> instance -> nat -> option global := @sglob _ memory_repr.
+Let smem_ind : store_record -> instance -> option nat := @smem_ind _ memory_repr.
 
-Let host := host host_function.
+Let host := host host_function memory_repr.
 
 Variable host_instance : host.
 
 Let host_state := host_state host_instance.
 
-Let host_application := @host_application host_function host_instance.
+Let host_application := @host_application host_function memory_repr host_instance.
 
 Let reduce : host_state -> store_record -> frame -> seq administrative_instruction ->
              host_state -> store_record -> frame -> seq administrative_instruction -> Prop
-  := @reduce _ _.
+  := @reduce _ memory_repr _.
 
 Definition terminal_form (es: seq administrative_instruction) :=
   const_list es \/ es = [::AI_trap].
@@ -559,7 +560,7 @@ Proof.
   - (* Select *)
     right. invert_typeof_vcs.
     destruct v1 => //=.
-    by destruct (s0 == Wasm_int.int_zero i32m) eqn:Heq0; move/eqP in Heq0; solve_progress.
+    by destruct (s0 == numerics.Wasm_int.int_zero numerics.i32m) eqn:Heq0; move/eqP in Heq0; solve_progress.
   - (* Block *)
     right.
     exists s, f, [::AI_label (length tm) [::] (v_to_e_list vcs ++ to_e_list es)], hs.
@@ -584,7 +585,7 @@ Proof.
     rewrite Ha. rewrite -v_to_e_cat.
     rewrite -catA.
     destruct v => //=.
-    destruct (s0 == Wasm_int.int_zero i32m) eqn:Heq0; move/eqP in Heq0.
+    destruct (s0 == numerics.Wasm_int.int_zero numerics.i32m) eqn:Heq0; move/eqP in Heq0.
     + exists s, f, (v_to_e_list (take (size tn) vcs) ++ [::AI_basic (BI_block (Tf tn ts2) es2)]), hs.
       apply reduce_composition_left; first by apply v_to_e_is_const_list.
       apply r_simple. by eapply rs_if_false.
@@ -604,7 +605,7 @@ Proof.
     rewrite Ha. rewrite -v_to_e_cat.
     rewrite -catA.
     destruct v => //=.
-    destruct (s0 == Wasm_int.int_zero i32m) eqn:Heq0; move/eqP in Heq0.
+    destruct (s0 == numerics.Wasm_int.int_zero numerics.i32m) eqn:Heq0; move/eqP in Heq0.
     + exists s, f, (v_to_e_list (take (size ts2) vcs) ++ [::]), hs.
       apply reduce_composition_left; first by apply v_to_e_is_const_list.
       by apply r_simple; eauto.
@@ -622,16 +623,16 @@ Proof.
     rewrite Ha.
     repeat rewrite -v_to_e_cat.
     repeat rewrite -catA. rewrite catA.
-    destruct (length ins > Wasm_int.nat_of_uint i32m s0) eqn:HLength; move/ltP in HLength.
+    destruct (length ins > numerics.Wasm_int.nat_of_uint numerics.i32m s0) eqn:HLength; move/ltP in HLength.
     + remember HLength as H8. clear HeqH8.
       apply List.nth_error_Some in H8.
-      destruct (List.nth_error ins (Wasm_int.nat_of_uint i32m s0)) eqn:HN => //=.
+      destruct (List.nth_error ins (numerics.Wasm_int.nat_of_uint numerics.i32m s0)) eqn:HN => //=.
       exists s, f, ((v_to_e_list (take (size t1s) vcs) ++ v_to_e_list (take (size ts) (drop (size t1s) vcs))) ++ [::AI_basic (BI_br n)]), hs.
       apply reduce_composition_left.
       { by apply const_list_concat; apply v_to_e_is_const_list. }
       apply r_simple. apply rs_br_table => //.
       by lias.
-    + assert (Inf : length ins <= Wasm_int.nat_of_uint i32m s0); first by lias.
+    + assert (Inf : length ins <= numerics.Wasm_int.nat_of_uint numerics.i32m s0); first by lias.
       move/leP in Inf.
       remember Inf as Inf'. clear HeqInf'.
       apply List.nth_error_None in Inf.
@@ -663,7 +664,7 @@ Proof.
     destruct v => //=.
     rewrite Ha. rewrite -v_to_e_cat. rewrite -catA.
     exists s, f.
-    destruct (stab s f.(f_inst) (Wasm_int.nat_of_uint i32m s0)) as [cl|] eqn:Hstab.
+    destruct (stab s f.(f_inst) (numerics.Wasm_int.nat_of_uint numerics.i32m s0)) as [cl|] eqn:Hstab.
     + (* Some cl *)
       destruct (stypes s f.(f_inst) i == Some (cl_type cl)) eqn:Hclt; move/eqP in Hclt.
       * exists (v_to_e_list (take (size t1s) vcs) ++ [::AI_invoke cl]), hs.
@@ -737,14 +738,14 @@ Proof.
     + (* Load Some *)
       destruct p as [tp sx].
       simpl in H0. remove_bools_options.
-      destruct (load_packed sx m (Wasm_int.N_of_uint i32m s0) off (tp_length tp) (t_length t)) eqn:HLoadResult.
+      destruct (load_packed sx m (numerics.Wasm_int.N_of_uint numerics.i32m s0) off (tp_length tp) (t_length t)) eqn:HLoadResult.
       * exists [::AI_basic (BI_const (wasm_deserialise b t))], hs.
         by eapply r_load_packed_success; eauto.
       * exists [::AI_trap], hs.
         by eapply r_load_packed_failure; eauto.
     + (* Load None *)
       simpl in H0.
-      destruct (load m (Wasm_int.N_of_uint i32m s0) off (t_length t)) eqn:HLoadResult.
+      destruct (load m (numerics.Wasm_int.N_of_uint numerics.i32m s0) off (t_length t)) eqn:HLoadResult.
       * exists [::AI_basic (BI_const (wasm_deserialise b t))], hs.
         by eapply r_load_success; eauto.
       * exists [::AI_trap], hs.
@@ -760,7 +761,7 @@ Proof.
     destruct tp as [tp |].
     + (* Store Some *)
       simpl in H0. remove_bools_options.
-      destruct (store_packed m (Wasm_int.N_of_uint i32m s0) off (bits v0) (tp_length tp)) eqn:HStoreResult.
+      destruct (store_packed m (numerics.Wasm_int.N_of_uint numerics.i32m s0) off (bits v0) (tp_length tp)) eqn:HStoreResult.
       * exists (upd_s_mem s (update_list_at s.(s_mems) n m0)), f, [::], hs.
         eapply r_store_packed_success; eauto.
         by unfold types_agree; apply/eqP.
@@ -769,7 +770,7 @@ Proof.
         by unfold types_agree; apply/eqP.
     + (* Store None *)
       simpl in H0.
-      destruct (store m (Wasm_int.N_of_uint i32m s0) off (bits v0) (t_length (typeof v0))) eqn:HStoreResult.
+      destruct (store m (numerics.Wasm_int.N_of_uint numerics.i32m s0) off (bits v0) (t_length (typeof v0))) eqn:HStoreResult.
       * exists (upd_s_mem s (update_list_at s.(s_mems) n m0)), f, [::], hs.
         eapply r_store_success; eauto.
         by unfold types_agree; apply/eqP.
@@ -783,7 +784,7 @@ Proof.
     eapply mem_context_store in H; eauto.
     destruct H as [n [HMemInd HMem]].
     destruct (List.nth_error (s_mems s) n) eqn:HN => //=.
-    exists s, f, [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat (mem_size m)))))], hs.
+    exists s, f, [::AI_basic (BI_const (VAL_int32 (numerics.Wasm_int.int_of_Z numerics.i32m (Z.of_nat (mem_size m)))))], hs.
     by eapply r_current_memory; eauto.
 
   - (* Grow_memory *)
@@ -794,7 +795,7 @@ Proof.
     destruct (List.nth_error (s_mems s) n) eqn:HN => //=.
     destruct v => //=.
     (* Similarly, for this proof we can just use trap and use the failure case. *)
-    exists s, f, [::AI_basic (BI_const (VAL_int32 int32_minus_one))], hs.
+    exists s, f, [::AI_basic (BI_const (VAL_int32 numerics.int32_minus_one))], hs.
     by eapply r_grow_memory_failure; eauto.
 
   - (* Composition *)
@@ -881,7 +882,7 @@ Definition return_reduce (es: seq administrative_instruction) :=
 Lemma br_reduce_decidable : forall es, decidable (br_reduce es).
 Proof.
   move=> es. apply: pickable_decidable. apply: pickable2_weaken.
-  apply lfilled_pickable_rec_gen => es' lh n.
+  apply (lfilled_pickable_rec_gen memory_repr) => es' lh n.
   by apply: lfilled_decidable_base.
 Defined.
 
@@ -889,7 +890,7 @@ Defined.
 Lemma return_reduce_decidable : forall es, decidable (return_reduce es).
 Proof.
   move=> es. apply: pickable_decidable. apply: pickable2_weaken.
-  apply lfilled_pickable_rec => es'.
+  apply (lfilled_pickable_rec memory_repr) => es'.
   by apply: lfilled_decidable_base.
 Defined.
 
@@ -1084,7 +1085,7 @@ Qed.
     being true only if the function doesn't return anything (so we are not in the middle of some
     Local functions).
 *)
-Lemma s_typing_lf_br: forall s rs f es ts,
+Lemma s_typing_lf_br: forall (s : store_record) rs f es ts,
     s_typing s rs f es ts ->
     (forall n lh k, lfilled n lh [::AI_basic (BI_br k)] es -> k < n).
 Proof.
@@ -1102,7 +1103,7 @@ Proof.
   by rewrite E in H1.
 Qed.
 
-Lemma s_typing_lf_return: forall s f es ts,
+Lemma s_typing_lf_return: forall (s : store_record) f es ts,
     s_typing s None f es ts ->
     (forall n, not_lf_return es n).
 Proof.

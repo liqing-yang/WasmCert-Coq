@@ -4,7 +4,7 @@
 From Coq Require Import Lia.
 From mathcomp Require Import ssreflect ssrnat ssrbool seq eqtype.
 From compcert Require Integers.
-From Wasm Require Export pickability.
+Require Export pickability.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

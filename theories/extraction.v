@@ -9,7 +9,9 @@ From Wasm Require Import
   instantiation
   type_checker
   interpreter
-  pp.
+  pp
+  memory
+  memory_array.
 
 From Coq Require Import
   extraction.ExtrOcamlBasic
@@ -24,5 +26,6 @@ Extraction "extract"
   Interpreter
   value_rec_safe
   PP
-  DummyHost.
+  DummyHost
+  Memory.
 

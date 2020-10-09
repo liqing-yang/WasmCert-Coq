@@ -4,15 +4,16 @@ Require Import Coq.Strings.String.
 From compcert Require Import Floats.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 Require Import Coq.Init.Decimal.
-Require Import bytes_pp datatypes interpreter.
 Require BinNatDef.
 Require Import ansi list_extra.
+Require Import bytes_pp datatypes interpreter memory.
 
 Open Scope string_scope.
 
 Section Host.
 
 Variable host_function : eqType.
+Variable memory_repr : Memory.Exports.memoryType.
 
 Let store_record := store_record host_function.
 Let administrative_instruction := administrative_instruction host_function.
@@ -80,10 +81,10 @@ Definition pp_immediate (i : immediate) : string :=
   string_of_uint (Nat.to_uint i).
 
 Definition pp_i32 i :=
-  pp_immediate (BinIntDef.Z.to_nat (Wasm_int.Int32.unsigned i)).
+  pp_immediate (BinIntDef.Z.to_nat (numerics.Wasm_int.Int32.unsigned i)).
 
 Definition pp_i64 i :=
-  pp_immediate (BinIntDef.Z.to_nat (Wasm_int.Int64.unsigned i)).
+  pp_immediate (BinIntDef.Z.to_nat (numerics.Wasm_int.Int64.unsigned i)).
 
 (* TODO: all this printing of floats business is highly dubious,
    and completely untested *)
@@ -375,21 +376,21 @@ Definition pp_global (g : global) : string :=
 Definition pp_globals (n : indentation) (gs : list global) : string :=
   String.concat "" (mapi (fun i g => indent n (string_of_nat i ++ ": " ++ pp_global g ++ newline)) gs).
 
-Definition pp_memories (n : indentation) (ms : list memory) : string :=
-String.concat "" (mapi (fun i g => indent n (string_of_nat i ++ ": " ++ "TODO: memory" ++ newline)) ms).
+Definition pp_memories (n : indentation) (ms : list (memory memory_repr)) : string :=
+  String.concat "" (mapi (fun i g => indent n (string_of_nat i ++ ": " ++ "TODO: memory" ++ newline)) ms).
 
-Definition pp_store (n : indentation) (s : store_record) : string :=
+Definition pp_store (n : indentation) (s : store_record memory_repr) : string :=
   indent n ("globals" ++ newline) ++
   pp_globals (n.+1) s.(s_globals) ++
   indent n ("memories" ++ newline) ++
   pp_memories (n.+1) s.(s_mems).
 
-Definition pp_config_tuple_except_store (cfg : config_tuple _) : string :=
+Definition pp_config_tuple_except_store (cfg : config_tuple _ memory_repr) : string :=
   let '(s, f, es) := cfg in
   pp_administrative_instructions 0 es ++
   "with values " ++ pp_values_hint_empty f.(f_locs) ++ newline.
 
-Definition pp_res_tuple_except_store (res_cfg : res_tuple _) : string :=
+Definition pp_res_tuple_except_store (res_cfg : res_tuple _ memory_repr) : string :=
   let '(s, f, res) := res_cfg in
   match res with
   | RS_crash _ =>
@@ -422,13 +423,13 @@ Variable show_host_function : EH.host_function -> string.
 
 Definition pp_values : list value -> string := pp_values.
 
-Definition pp_store : nat -> store_record -> string := pp_store _.
+Definition pp_store : nat -> store_record memory_repr -> string := pp_store _ memory_repr.
 
-Definition pp_res_tuple_except_store : res_tuple -> string :=
-  pp_res_tuple_except_store _ show_host_function.
+Definition pp_res_tuple_except_store : res_tuple memory_repr -> string :=
+  pp_res_tuple_except_store _ _ show_host_function.
 
-Definition pp_config_tuple_except_store : config_tuple -> string :=
-  pp_config_tuple_except_store _ show_host_function.
+Definition pp_config_tuple_except_store : config_tuple memory_repr -> string :=
+  pp_config_tuple_except_store _ _ show_host_function.
 
 End Show.
 

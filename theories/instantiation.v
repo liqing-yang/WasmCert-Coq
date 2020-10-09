@@ -5,10 +5,10 @@
 From mathcomp Require Import ssreflect ssrbool ssrnat eqtype seq.
 From ITree Require Import ITree.
 From ITree Require ITreeFacts.
-From Wasm Require Import list_extra datatypes datatypes_properties
-                         interpreter binary_format_parser operations
-                         typing opsem type_checker.
 Require Import BinNat.
+Require Import list_extra datatypes datatypes_properties
+                         interpreter binary_format_parser operations
+                         typing opsem type_checker memory.
 
 (* TODO: Documentation *)
 
@@ -19,7 +19,9 @@ Require Import BinNat.
 Section Host.
 
 Variable host_function : eqType.
-Let host := host host_function.
+Variable memory_repr : Memory.Exports.memoryType.
+
+Let host := host host_function memory_repr.
 
 Variable host_instance : host.
 
@@ -29,11 +31,11 @@ Let store_record_eqType := @store_record_eqType host_function.
 (* Before adding a canonical structure to [name], we save the base one to ensure better extraction. *)
 Local Canonical Structure name_eqType := Eval hnf in EqType name (seq_eqMixin _).
 
-Let store_record := store_record host_function.
+Let store_record := store_record host_function memory_repr.
 Let administrative_instruction := administrative_instruction host_function.
 Let host_state := host_state host_instance.
 
-Let executable_host := executable_host host_function.
+Let executable_host := executable_host host_function memory_repr.
 Variable executable_host_instance : executable_host.
 Let host_event := host_event executable_host_instance.
 
@@ -41,7 +43,7 @@ Context {eff : Type -> Type}.
 Context {eff_has_host_event : host_event -< eff}.
 
 Let run_v {eff' eff'_has_host_event} :=
-  @interpreter.run_v _ executable_host_instance eff' eff'_has_host_event.
+  @interpreter.run_v _ memory_repr executable_host_instance eff' eff'_has_host_event.
 
 Definition addr := nat.
 Definition funaddr := addr.
@@ -113,15 +115,13 @@ Definition alloc_tab (s : store_record) (tty : table_type) : store_record * tabl
 Definition alloc_tabs (s : store_record) (ts : list table_type) : store_record * list tableidx :=
   alloc_Xs alloc_tab s ts.
 
-Definition mem_mk (lim : limits) : memory := {|
-  mem_data := {|
-    dv_length := BinNatDef.N.mul page_size lim.(lim_min);
-    dv_array := Byte_array.make Integers.Byte.zero;
-  |};
-  mem_max_opt := lim.(lim_max);
-|}.
+Definition mem_mk (lim : limits) : memory memory_repr :=
+  let len := BinNatDef.N.mul page_size lim.(lim_min) in
+  {| mem_data := Memory.mem_make (Memory.mixin (Memory.class memory_repr)) Integers.Byte.zero len;
+    mem_max_opt := lim.(lim_max);
+  |}.
 
-Definition add_mem (s : store_record) (m_m : memory) : store_record := {|
+Definition add_mem (s : store_record) (m_m : memory memory_repr) : store_record := {|
   s_funcs := s.(s_funcs);
   s_tables := s.(s_tables);
   s_mems := List.app s.(s_mems) [::m_m];
@@ -266,7 +266,7 @@ Definition interp_alloc_module (s : store_record) (m : module) (imps : list v_ex
 (* TODO: lemmas *)
 
 Definition insert_at {A} (v : A) (n : nat) (l : list A) : list A :=
-List.app (List.firstn n l) (List.app [::v] (List.skipn (n + 1) l)).
+  List.app (List.firstn n l) (List.app [::v] (List.skipn (n + 1) l)).
 
 Definition dummy_table := {| table_data := nil; table_max_opt := None; |}.
 
@@ -283,10 +283,8 @@ Definition init_tab (s : store_record) (inst : instance) (e_ind : nat) (e : modu
 Definition init_tabs (s : store_record) (inst : instance) (e_inds : list nat) (es : list module_element) : store_record :=
   List.fold_left (fun s' '(e_ind, e) => init_tab s' inst e_ind e) (List.combine e_inds es) s.
 
-Definition dummy_data_vec := {|
-  dv_length := 0;
-  dv_array := Byte_array.make Integers.Byte.zero;
-|}.
+Definition dummy_data_vec :=
+  Memory.mem_make (Memory.mixin (Memory.class memory_repr)) Integers.Byte.zero 0.
 
 Definition dummy_mem := {|
   mem_data := dummy_data_vec;
@@ -296,10 +294,11 @@ Definition dummy_mem := {|
 Definition init_mem (s : store_record) (inst : instance) (d_ind : N) (d : module_data) : store_record :=
   let m_ind := List.nth (match d.(moddata_data) with Mk_memidx i => i end) inst.(inst_memory) 0 in
   let mem := List.nth m_ind s.(s_mems) dummy_mem in
-  let mem' := operations.write_bytes mem d_ind (List.map compcert_byte_of_byte d.(moddata_init)) in
+  let mem'_opt := operations.write_bytes mem d_ind (List.map bytes.compcert_byte_of_byte d.(moddata_init)) in
+  let mems' := match mem'_opt with None => s.(s_mems) | Some mem' => insert_at mem' m_ind s.(s_mems) end in
   {| s_funcs := s.(s_funcs);
      s_tables := s.(s_tables);
-     s_mems := insert_at mem' m_ind s.(s_mems);
+     s_mems := mems';
      s_globals := s.(s_globals); |}.
 
 Definition init_mems (s : store_record) (inst : instance) (d_inds : list N) (ds : list module_data) : store_record :=
@@ -489,7 +488,7 @@ Inductive external_typing : store_record -> v_ext -> extern_t -> Prop :=
   typing.tab_typing ti tt ->
   external_typing s (MED_table (Mk_tableidx i)) (ET_tab tt) (* {| tt_limits := lim; tt_elem_type := ELT_funcref |})*)
 | ETY_mem :
-  forall (s : store_record) (i : nat) (m : memory) (mt : memory_type),
+  forall (s : store_record) (i : nat) (m : memory memory_repr) (mt : memory_type),
   i < List.length s.(s_mems) ->
   List.nth_error s.(s_mems) i = Some m ->
   typing.mem_typing m mt ->
@@ -521,13 +520,13 @@ Definition instantiate_data inst (hs' : host_state) (s' : store_record) m d_offs
     m.(mod_data)
     d_offs.
 
-Definition nat_of_int (i : i32) : nat :=
-  BinInt.Z.to_nat i.(Wasm_int.Int32.intval).
+Definition nat_of_int (i : numerics.i32) : nat :=
+  BinInt.Z.to_nat i.(numerics.Wasm_int.Int32.intval).
 
-Definition N_of_int (i : i32) : N :=
-  BinInt.Z.to_N i.(Wasm_int.Int32.intval).
+Definition N_of_int (i : numerics.i32) : N :=
+  BinInt.Z.to_N i.(numerics.Wasm_int.Int32.intval).
 
-Definition check_bounds_elem (inst : instance) (s : store_record) (m : module) (e_offs : seq i32) : bool :=
+Definition check_bounds_elem (inst : instance) (s : store_record) (m : module) (e_offs : seq numerics.i32) : bool :=
   seq.all2
     (fun e_off e =>
       match List.nth_error inst.(inst_tab) (match e.(modelem_table) with Mk_tableidx i => i end) with
@@ -542,10 +541,10 @@ Definition check_bounds_elem (inst : instance) (s : store_record) (m : module) (
       e_offs
       m.(mod_elem).
 
-Definition mem_length (m : memory) : N :=
-  m.(mem_data).(dv_length).
+Definition mem_length (m : memory memory_repr) : N :=
+  Memory.mem_length (Memory.mixin (Memory.class memory_repr)) m.(mem_data).
 
-Definition check_bounds_data (inst : instance) (s : store_record) (m : module) (d_offs : seq i32) : bool :=
+Definition check_bounds_data (inst : instance) (s : store_record) (m : module) (d_offs : seq numerics.i32) : bool :=
   seq.all2
     (fun d_off d =>
       match List.nth_error inst.(inst_memory) (match d.(moddata_data) with Mk_memidx i => i end) with
@@ -582,9 +581,9 @@ Definition instantiate (* FIXME: Do we need to use this: [(hs : host_state)] ? *
     check_bounds_elem inst s m e_offs /\
     check_bounds_data inst s m e_offs /\
     check_start m inst start /\
-    let s'' := init_tabs s' inst (map (fun o => BinInt.Z.to_nat o.(Wasm_int.Int32.intval)) e_offs) m.(mod_elem) in
-    (s_end : store_record_eqType)
-      == init_mems s'' inst (map (fun o => BinInt.Z.to_N o.(Wasm_int.Int32.intval)) d_offs) m.(mod_data).
+    let s'' := init_tabs s' inst (map (fun o => BinInt.Z.to_nat o.(numerics.Wasm_int.Int32.intval)) e_offs) m.(mod_elem) in
+    (s_end : store_record)
+      == init_mems s'' inst (map (fun o => BinInt.Z.to_N o.(numerics.Wasm_int.Int32.intval)) d_offs) m.(mod_data).
 
 Definition gather_m_f_type (tfs : list function_type) (m_f : module_func) : option function_type :=
   let '(Mk_typeidx i) := m_f.(modfunc_type) in
@@ -802,7 +801,7 @@ Definition interp_get_v (s : store_record) (inst : instance) (b_es : list basic_
   end.
 
 Definition interp_get_i32 (s : store_record) (inst : instance) (b_es : list basic_instruction)
-  : itree (instantiation_error +' eff) i32 (* FIXME: isa mismatch *) :=
+  : itree (instantiation_error +' eff) numerics.i32 (* FIXME: isa mismatch *) :=
   v <- interp_get_v s inst b_es ;;
   match v with
   | VAL_int32 c => ret c
@@ -855,7 +854,7 @@ Definition interp_instantiate_wrapper (m : module)
   interp_instantiate empty_store_record m nil.
 
 Definition lookup_exported_function (n : name) (store_inst_exps : store_record * instance * list module_export)
-    : option (config_tuple host_function) :=
+    : option (config_tuple host_function memory_repr) :=
   let '(s, inst, exps) := store_inst_exps in
   List.fold_left
     (fun acc e =>
@@ -886,15 +885,15 @@ Module Exec := convert_to_executable_host EH.
 Import Exec.
 
 Definition lookup_exported_function :
-    name -> store_record * instance * seq module_export ->
-    option config_tuple :=
-  @lookup_exported_function _.
+    name -> store_record memory_repr * instance * seq module_export ->
+    option (config_tuple memory_repr) :=
+  @lookup_exported_function _ memory_repr.
 
 Definition interp_instantiate_wrapper :
   module ->
   itree (instantiation_error +' host_event)
-    (store_record * instance * seq module_export * option nat) :=
-  @interp_instantiate_wrapper _ executable_host_instance _ (fun T e => e).
+    (store_record memory_repr * instance * seq module_export * option nat) :=
+  @interp_instantiate_wrapper _ memory_repr executable_host_instance _ (fun T e => e).
 
 End Instantiation.
 

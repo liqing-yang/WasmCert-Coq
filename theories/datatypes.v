@@ -6,11 +6,12 @@
 (* TODO: use better representations that "nat", which is expensive;
    maybe N? maybe a 32-bit word type? *)
 
-Require Import BinNat.
-From Wasm Require Import common numerics bytes memory.
-Import Memory.Exports.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From compcert Require common.Memdata.
+Require Import BinNat.
+Require Import common numerics bytes memory.
+Import Memory.Exports.
+
 
 Set Implicit Arguments.
 Unset Strict Implicit.

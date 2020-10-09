@@ -1,10 +1,11 @@
 (** Miscellaneous properties about Wasm operations **)
 (* (C) Rao Xiaojia, M. Bodin - see LICENSE.txt *)
 
-From Wasm Require Export operations typing opsem common.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From StrongInduction Require Import StrongInduction.
 From Coq Require Import Bool.
+Require Import memory.
+Require Export operations typing opsem common.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -572,8 +573,9 @@ Ltac fold_upd_context :=
 Section Host.
 
 Variable host_function : eqType.
+Variable memory_repr : Memory.Exports.memoryType.
 
-Let store_record := store_record host_function.
+Let store_record := store_record host_function memory_repr.
 Let function_closure := function_closure host_function.
 Let administrative_instruction := administrative_instruction host_function.
 Let const_list : seq administrative_instruction -> bool := @const_list _.
@@ -583,7 +585,7 @@ Let lfilledInd := @lfilledInd host_function.
 Let es_is_basic := @es_is_basic host_function.
 Let to_e_list := @to_e_list host_function.
 Let e_typing : store_record -> t_context -> seq administrative_instruction -> function_type -> Prop :=
-  @e_typing _.
+  @e_typing _ _.
 
 Lemma lfilled_collapse1: forall n lh vs es LI l,
     lfilledInd n lh (vs++es) LI ->

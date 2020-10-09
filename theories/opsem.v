@@ -5,6 +5,7 @@
 From Coq Require Import ZArith.BinInt.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 Require Export operations host.
+Require Import memory.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -14,11 +15,13 @@ Unset Printing Implicit Defensive.
 Section Host.
 
 Variable host_function : eqType.
-Let host := host host_function.
+Variable memory_repr : Memory.Exports.memoryType.
+
+Let host := host host_function memory_repr.
 
 Variable host_instance : host.
 
-Let store_record := store_record host_function.
+Let store_record := store_record host_function memory_repr.
 Let administrative_instruction := administrative_instruction host_function.
 Let host_state := host_state host_instance.
 
@@ -39,14 +42,14 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
   (** testops **)
   | rs_testop_i32 :
     forall c testop,
-    reduce_simple [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_testop T_i32 testop)] [::AI_basic (BI_const (VAL_int32 (wasm_bool (@app_testop_i i32t testop c))))]
+    reduce_simple [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_testop T_i32 testop)] [::AI_basic (BI_const (VAL_int32 (numerics.wasm_bool (@app_testop_i numerics.i32t testop c))))]
   | rs_testop_i64 :
     forall c testop,
-    reduce_simple [::AI_basic (BI_const (VAL_int64 c)); AI_basic (BI_testop T_i64 testop)] [::AI_basic (BI_const (VAL_int32 (wasm_bool (@app_testop_i i64t testop c))))]
+    reduce_simple [::AI_basic (BI_const (VAL_int64 c)); AI_basic (BI_testop T_i64 testop)] [::AI_basic (BI_const (VAL_int32 (numerics.wasm_bool (@app_testop_i numerics.i64t testop c))))]
 
   (** relops **)
   | rs_relop: forall v1 v2 t op,
-    reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_relop t op)] [::AI_basic (BI_const (VAL_int32 (wasm_bool (app_relop op v1 v2))))]
+    reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_relop t op)] [::AI_basic (BI_const (VAL_int32 (numerics.wasm_bool (app_relop op v1 v2))))]
                     
   (** convert and reinterpret **)
   | rs_convert_success :
@@ -74,11 +77,11 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
     reduce_simple [::AI_basic (BI_const v); AI_basic BI_drop] [::]
   | rs_select_false :
     forall n v1 v2,
-    n = Wasm_int.int_zero i32m ->
+    n = numerics.Wasm_int.int_zero numerics.i32m ->
     reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_const (VAL_int32 n)); AI_basic BI_select] [::AI_basic (BI_const v2)]
   | rs_select_true :
     forall n v1 v2,
-    n <> Wasm_int.int_zero i32m ->
+    n <> numerics.Wasm_int.int_zero numerics.i32m ->
     reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_const (VAL_int32 n)); AI_basic BI_select] [::AI_basic (BI_const v1)]
   | rs_block :
       forall vs es n m t1s t2s,
@@ -96,11 +99,11 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
         reduce_simple (vs ++ [::AI_basic (BI_loop (Tf t1s t2s) es)]) [::AI_label n [::AI_basic (BI_loop (Tf t1s t2s) es)] (vs ++ to_e_list es)]
   | rs_if_false :
       forall n tf e1s e2s,
-        n = Wasm_int.int_zero i32m ->
+        n = numerics.Wasm_int.int_zero numerics.i32m ->
         reduce_simple ([::AI_basic (BI_const (VAL_int32 n)); AI_basic (BI_if tf e1s e2s)]) [::AI_basic (BI_block tf e2s)]
   | rs_if_true :
       forall n tf e1s e2s,
-        n <> Wasm_int.int_zero i32m ->
+        n <> numerics.Wasm_int.int_zero numerics.i32m ->
         reduce_simple ([::AI_basic (BI_const (VAL_int32 n)); AI_basic (BI_if tf e1s e2s)]) [::AI_basic (BI_block tf e1s)]
   | rs_label_const :
       forall n es vs,
@@ -117,20 +120,20 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
         reduce_simple [::AI_label n es LI] (vs ++ es)
   | rs_br_if_false :
       forall n i,
-        n = Wasm_int.int_zero i32m ->
+        n = numerics.Wasm_int.int_zero numerics.i32m ->
         reduce_simple [::AI_basic (BI_const (VAL_int32 n)); AI_basic (BI_br_if i)] [::]
   | rs_br_if_true :
       forall n i,
-        n <> Wasm_int.int_zero i32m ->
+        n <> numerics.Wasm_int.int_zero numerics.i32m ->
         reduce_simple [::AI_basic (BI_const (VAL_int32 n)); AI_basic (BI_br_if i)] [::AI_basic (BI_br i)]
   | rs_br_table : (* ??? *)
       forall iss c i j,
-        length iss > Wasm_int.nat_of_uint i32m c ->
-        List.nth_error iss (Wasm_int.nat_of_uint i32m c) = Some j ->
+        length iss > numerics.Wasm_int.nat_of_uint numerics.i32m c ->
+        List.nth_error iss (numerics.Wasm_int.nat_of_uint numerics.i32m c) = Some j ->
         reduce_simple [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_br_table iss i)] [::AI_basic (BI_br j)]
   | rs_br_table_length :
       forall iss c i,
-        length iss <= (Wasm_int.nat_of_uint i32m c) ->
+        length iss <= (numerics.Wasm_int.nat_of_uint numerics.i32m c) ->
         reduce_simple [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_br_table iss i)] [::AI_basic (BI_br i)]
   | rs_local_const :
       forall es n f,
@@ -157,156 +160,7 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
         reduce_simple es [::AI_trap]
   .
 
-(*
-Inductive reduce : store_record -> list value -> list administrative_instruction -> instance -> store_record -> list value -> list administrative_instruction -> Prop :=
-| r_simple :
-    forall e e' s vs i,
-      reduce_simple e e' ->
-      reduce s vs e i s vs e'
-| r_call :
-    forall s vs i j f,
-      sfunc s i j = Some f ->
-      reduce s vs [::AI_basic (Call j)] i s vs [::Invoke f]
-| r_call_indirect_success :
-    forall s i j cl c vs tf,
-      stab s i (Wasm_int.nat_of_uint i32m c) = Some cl ->
-      stypes s i j = Some tf ->
-      cl_type cl = tf ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 c)); AI_basic (Call_indirect j)] i s vs [::Invoke cl]
-| r_call_indirect_failure1 :
-    forall s i j c cl vs,
-      stab s i (Wasm_int.nat_of_uint i32m c) = Some cl ->
-      stypes s i j <> Some (cl_type cl) ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 c)); AI_basic (Call_indirect j)] i s vs [::AI_trap]
-| r_call_indirect_failure2 :
-    forall s i j c vs,
-      stab s i (Wasm_int.nat_of_uint i32m c) = None ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 c)); AI_basic (Call_indirect j)] i s vs [::AI_trap]
-| r_invoke_native :
-    forall cl t1s t2s ts es ves vcs n m k zs vs s i j,
-      cl = Func_native j (Tf t1s t2s) ts es ->
-      ves = v_to_e_list vcs ->
-      length vcs = n ->
-      length ts = k ->
-      length t1s = n ->
-      length t2s = m ->
-      n_zeros ts = zs ->
-      reduce s vs (ves ++ [::Invoke cl]) i s vs [::Local m j (vcs ++ zs) [::AI_basic (Block (Tf [::] t2s) es)]]
-| r_invoke_host_success :
-    forall cl f t1s t2s ves vcs m n s s' vcs' vs i,
-      cl = Func_host (Tf t1s t2s) f ->
-      ves = v_to_e_list vcs ->
-      length vcs = n ->
-      length t1s = n ->
-      length t2s = m ->
-      host_apply s (Tf t1s t2s) f vcs (* FIXME: hs *) = Some (s', vcs') ->
-      reduce s vs (ves ++ [::Invoke cl]) i s' vs (v_to_e_list vcs')
-| r_invoke_host_failure :
-    forall cl t1s t2s f ves vcs n m s vs i,
-      cl = Func_host (Tf t1s t2s) f ->
-      ves = v_to_e_list vcs ->
-      length vcs = n ->
-      length t1s = n ->
-      length t2s = m ->
-      reduce s vs (ves ++ [::Invoke cl]) i s vs [::AI_trap]
-| r_get_local :
-    forall vi v vs i j s,
-      length vi = j ->
-      reduce s (vi ++ [::v] ++ vs) [::AI_basic (Get_local j)] i s (vi ++ [::v] ++ vs) [::AI_basic (BI_const v)]
-| r_set_local :
-    forall vs j v i s vd,
-      length vs > j ->
-      reduce s vs [::AI_basic (BI_const v); AI_basic (Set_local j)] i s (set_nth vd vs j v) [::]
-| r_get_global :
-    forall s vs j i v,
-      sglob_val s i j = Some v ->
-      reduce s vs [::AI_basic (Get_global j)] i s vs [::AI_basic (BI_const v)]
-| r_set_global :
-    forall s i j v s' vs,
-      supdate_glob s i j v = Some s' ->
-      reduce s vs [::AI_basic (BI_const v); AI_basic (Set_global j)] i s' vs [::]
-| r_load_success :
-    forall s i t bs vs k a off m j,
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      load m (Wasm_int.N_of_uint i32m k) off (t_length t) = Some bs ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 k)); AI_basic (Load t None a off)] i s vs [::AI_basic (BI_const (wasm_deserialise bs t))]
-| r_load_failure :
-    forall s i t vs k a off m j,
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      load m (Wasm_int.N_of_uint i32m k) off (t_length t) = None ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 k)); AI_basic (Load t None a off)] i s vs [::AI_trap]
-| r_load_packed_success :
-    forall s i t tp vs k a off m j bs sx,
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      load_packed sx m (Wasm_int.N_of_uint i32m k) off (tp_length tp) (t_length t) = Some bs ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 k)); AI_basic (Load t (Some (tp, sx)) a off)] i s vs [::AI_basic (BI_const (wasm_deserialise bs t))]
-| r_load_packed_failure :
-    forall s i t tp vs k a off m j sx,
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      load_packed sx m (Wasm_int.N_of_uint i32m k) off (tp_length tp) (t_length t) = None ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 k)); AI_basic (Load t (Some (tp, sx)) a off)] i s vs [::AI_trap]
-| r_store_success :
-    forall t v s i j vs mem' k a off m,
-      types_agree t v ->
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      store m (Wasm_int.N_of_uint i32m k) off (bits v) (t_length t) = Some mem' ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (Store t None a off)] i (upd_s_mem s (update_list_at s.(s_mems) j mem')) vs [::]
-| r_store_failure :
-    forall t v s i j m k off a vs,
-      types_agree t v ->
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      store m (Wasm_int.N_of_uint i32m k) off (bits v) (t_length t) = None ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (Store t None a off)] i s vs [::AI_trap]
-| r_store_packed_success :
-    forall t v s i j m k off a vs mem' tp,
-      types_agree t v ->
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      store_packed m (Wasm_int.N_of_uint i32m k) off (bits v) (tp_length tp) = Some mem' ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (Store t (Some tp) a off)] i (upd_s_mem s (update_list_at s.(s_mems) j mem')) vs [::]
-| r_store_packed_failure :
-    forall t v s i j m k off a vs tp,
-      types_agree t v ->
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      store_packed m (Wasm_int.N_of_uint i32m k) off (bits v) (tp_length tp) = None ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (Store t (Some tp) a off)] i s vs [::AI_trap]
-| r_current_memory :
-    forall i j m n s vs,
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      mem_size m = n ->
-      reduce s vs [::AI_basic (Current_memory)] i s vs [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat n))))]
-| r_grow_memory_success :
-    forall s i j m n mem' vs c,
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      mem_size m = n ->
-      mem_grow m (Wasm_int.N_of_uint i32m c) = Some mem' ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 c)); AI_basic Grow_memory] i (upd_s_mem s (update_list_at s.(s_mems) j mem')) vs [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat n))))]
-| r_grow_memory_failure :
-    forall i j m n s vs c,
-      smem_ind s i = Some j ->
-      List.nth_error s.(s_mems) j = Some m ->
-      mem_size m = n ->
-      reduce s vs [::AI_basic (BI_const (VAL_int32 c)); AI_basic Grow_memory] i s vs [::AI_basic (BI_const (VAL_int32 int32_minus_one))]
-| r_label :
-    forall s vs es les i s' vs' es' les' k lh,
-      reduce s vs es i s' vs' es' ->
-      lfilled k lh es les ->
-      lfilled k lh es' les' ->
-      reduce s vs les i s' vs' les'
-| r_local :
-    forall s vs es i s' vs' es' n v0s j,
-      reduce s vs es i s' vs' es' ->
-      reduce s v0s [::Local n i vs es] j s' v0s [::Local n i vs' es'].
-*)
+Let host_application := host_application host_instance.
 
 Inductive reduce : host_state -> store_record -> frame -> list administrative_instruction ->
                    host_state -> store_record -> frame -> list administrative_instruction -> Prop :=
@@ -322,18 +176,18 @@ Inductive reduce : host_state -> store_record -> frame -> list administrative_in
         reduce hs s f [::AI_basic (BI_call i)] hs s f [::AI_invoke cl]
   | r_call_indirect_success :
       forall s f i cl c tf hs,
-        stab s f.(f_inst) (Wasm_int.nat_of_uint i32m c) = Some cl ->
+        stab s f.(f_inst) (numerics.Wasm_int.nat_of_uint numerics.i32m c) = Some cl ->
         stypes s f.(f_inst) i = Some tf ->
         cl_type cl = tf ->
         reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_invoke cl]
   | r_call_indirect_failure1 :
       forall s f i c cl hs,
-        stab s f.(f_inst) (Wasm_int.nat_of_uint i32m c) = Some cl ->
+        stab s f.(f_inst) (numerics.Wasm_int.nat_of_uint numerics.i32m c) = Some cl ->
         stypes s f.(f_inst) i <> Some (cl_type cl) ->
         reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_trap]
   | r_call_indirect_failure2 :
       forall s f i c hs,
-        stab s f.(f_inst) (Wasm_int.nat_of_uint i32m c) = None ->
+        stab s f.(f_inst) (numerics.Wasm_int.nat_of_uint numerics.i32m c) = None ->
         reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_trap]
   | r_invoke_native :
       forall cl t1s t2s ts es ves vcs n m k zs s f f' i hs,
@@ -348,7 +202,7 @@ Inductive reduce : host_state -> store_record -> frame -> list administrative_in
         f'.(f_locs) = vcs ++ zs ->
         reduce hs s f (ves ++ [::AI_invoke cl]) hs s f [::AI_local m f' [::AI_basic (BI_block (Tf [::] t2s) es)]]
   | r_invoke_host_success :
-      forall cl h t1s t2s ves vcs m n s s' r f hs hs',
+      forall cl h t1s t2s ves vcs m n s s' r f (hs hs' : host.host_state host_instance),
         cl = FC_func_host (Tf t1s t2s) h ->
         ves = v_to_e_list vcs ->
         length vcs = n ->
@@ -388,53 +242,53 @@ Inductive reduce : host_state -> store_record -> frame -> list administrative_in
     forall s i f t bs k a off m hs,
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
-      load m (Wasm_int.N_of_uint i32m k) off (t_length t) = Some bs ->
+      load m (numerics.Wasm_int.N_of_uint numerics.i32m k) off (t_length t) = Some bs ->
       reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_load t None a off)] hs s f [::AI_basic (BI_const (wasm_deserialise bs t))]
   | r_load_failure :
     forall s i f t k a off m hs,
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
-      load m (Wasm_int.N_of_uint i32m k) off (t_length t) = None ->
+      load m (numerics.Wasm_int.N_of_uint numerics.i32m k) off (t_length t) = None ->
       reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_load t None a off)] hs s f [::AI_trap]
   | r_load_packed_success :
     forall s i f t tp k a off m bs sx hs,
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
-      load_packed sx m (Wasm_int.N_of_uint i32m k) off (tp_length tp) (t_length t) = Some bs ->
+      load_packed sx m (numerics.Wasm_int.N_of_uint numerics.i32m k) off (tp_length tp) (t_length t) = Some bs ->
       reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_load t (Some (tp, sx)) a off)] hs s f [::AI_basic (BI_const (wasm_deserialise bs t))]
   | r_load_packed_failure :
     forall s i f t tp k a off m sx hs,
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
-      load_packed sx m (Wasm_int.N_of_uint i32m k) off (tp_length tp) (t_length t) = None ->
+      load_packed sx m (numerics.Wasm_int.N_of_uint numerics.i32m k) off (tp_length tp) (t_length t) = None ->
       reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_load t (Some (tp, sx)) a off)] hs s f [::AI_trap]
   | r_store_success :
     forall t v s i f mem' k a off m hs,
       types_agree t v ->
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
-      store m (Wasm_int.N_of_uint i32m k) off (bits v) (t_length t) = Some mem' ->
+      store m (numerics.Wasm_int.N_of_uint numerics.i32m k) off (bits v) (t_length t) = Some mem' ->
       reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (BI_store t None a off)] hs (upd_s_mem s (update_list_at s.(s_mems) i mem')) f [::]
   | r_store_failure :
     forall t v s i f m k off a hs,
       types_agree t v ->
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
-      store m (Wasm_int.N_of_uint i32m k) off (bits v) (t_length t) = None ->
+      store m (numerics.Wasm_int.N_of_uint numerics.i32m k) off (bits v) (t_length t) = None ->
       reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (BI_store t None a off)] hs s f [::AI_trap]
   | r_store_packed_success :
     forall t v s i f m k off a mem' tp hs,
       types_agree t v ->
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
-      store_packed m (Wasm_int.N_of_uint i32m k) off (bits v) (tp_length tp) = Some mem' ->
+      store_packed m (numerics.Wasm_int.N_of_uint numerics.i32m k) off (bits v) (tp_length tp) = Some mem' ->
       reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (BI_store t (Some tp) a off)] hs (upd_s_mem s (update_list_at s.(s_mems) i mem')) f [::]
   | r_store_packed_failure :
     forall t v s i f m k off a tp hs,
       types_agree t v ->
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
-      store_packed m (Wasm_int.N_of_uint i32m k) off (bits v) (tp_length tp) = None ->
+      store_packed m (numerics.Wasm_int.N_of_uint numerics.i32m k) off (bits v) (tp_length tp) = None ->
       reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (BI_store t (Some tp) a off)] hs s f [::AI_trap]
 
   (** memory **)
@@ -443,20 +297,20 @@ Inductive reduce : host_state -> store_record -> frame -> list administrative_in
         smem_ind s f.(f_inst) = Some i ->
         List.nth_error s.(s_mems) i = Some m ->
         mem_size m = n ->
-        reduce hs s f [::AI_basic (BI_current_memory)] hs s f [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat n))))]
+        reduce hs s f [::AI_basic (BI_current_memory)] hs s f [::AI_basic (BI_const (VAL_int32 (numerics.Wasm_int.int_of_Z numerics.i32m (Z.of_nat n))))]
   | r_grow_memory_success :
     forall s i f m n mem' c hs,
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
       mem_size m = n ->
-      mem_grow m (Wasm_int.N_of_uint i32m c) = Some mem' ->
-      reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic BI_grow_memory] hs (upd_s_mem s (update_list_at s.(s_mems) i mem')) f [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat n))))]
+      mem_grow m (numerics.Wasm_int.N_of_uint numerics.i32m c) = Some mem' ->
+      reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic BI_grow_memory] hs (upd_s_mem s (update_list_at s.(s_mems) i mem')) f [::AI_basic (BI_const (VAL_int32 (numerics.Wasm_int.int_of_Z numerics.i32m (Z.of_nat n))))]
   | r_grow_memory_failure :
       forall i f m n s c hs,
         smem_ind s f.(f_inst) = Some i ->
         List.nth_error s.(s_mems) i = Some m ->
         mem_size m = n ->
-        reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic BI_grow_memory] hs s f [::AI_basic (BI_const (VAL_int32 int32_minus_one))]
+        reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic BI_grow_memory] hs s f [::AI_basic (BI_const (VAL_int32 numerics.int32_minus_one))]
 
   (** label and local **)
   | r_label :

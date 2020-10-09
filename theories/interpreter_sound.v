@@ -1,26 +1,25 @@
 (** Soundness of the Wasm interpreter **)
 (* (C) J. Pichon, M. Bodin, Rao Xiaojia - see LICENSE.txt *)
 
-From Wasm Require Import common.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From StrongInduction Require Import StrongInduction Inductions.
 From ITree Require Import ITree ITreeFacts.
+Require Import common operations opsem interpreter properties memory.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-From Wasm Require Import operations opsem interpreter properties.
-
-
 Section Host.
 
 Variable host_function : eqType.
-Let host := host host_function.
+Variable memory_repr : Memory.Exports.memoryType.
+
+Let host := host host_function memory_repr.
 
 Let store_record := store_record host_function.
 Let administrative_instruction := administrative_instruction host_function.
-Let config_tuple := config_tuple host_function.
+Let config_tuple := config_tuple host_function memory_repr.
 Let config_one_tuple_without_e := config_one_tuple_without_e host_function.
 Let res_tuple := res_tuple host_function.
 
@@ -30,7 +29,7 @@ Let lfilledInd := @lfilledInd host_function.
 
 Variable host_instance : host.
 
-Let executable_host := executable_host host_function.
+Let executable_host := executable_host host_function memory_repr.
 Variable executable_host_instance : executable_host.
 Let host_event := host_event executable_host_instance.
 
@@ -39,7 +38,7 @@ Let host_state := host_state host_instance.
 Context {eff : Type -> Type}.
 Context {eff_has_host_event : host_event -< eff}.
 
-Let run_step_fuel : config_tuple -> nat := @run_step_fuel host_function.
+Let run_step_fuel : config_tuple -> nat := @run_step_fuel host_function memory_repr.
 (* FIXME: Do we need these instances?
 Let run_step_base : fuel -> depth -> instance -> config_tuple -> host_monad res_tuple :=
   run_step_base executable_host_instance.

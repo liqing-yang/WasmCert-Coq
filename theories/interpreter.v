@@ -1,13 +1,12 @@
 (** Wasm interpreter **)
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
 
-From Wasm Require Import common.
 From Coq Require Import ZArith.BinInt.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From ExtLib Require Import Structures.Monad.
 From ITree Require Import ITree ITreeFacts.
-From Wasm Require Export operations host type_checker.
-
+Require Import common memory.
+Require Export operations host type_checker.
 Import Monads.
 Import MonadNotation.
 
@@ -23,21 +22,22 @@ Local Notation "x <- m1 ; m2" :=
   (at level 80, right associativity).
 
 Variable host_function : eqType.
+Variable memory_repr : Memory.Exports.memoryType.
 
-Let config_tuple := config_tuple host_function.
-Let store_record := store_record host_function.
+Let config_tuple := config_tuple host_function memory_repr.
+Let store_record := store_record host_function memory_repr.
 Let administrative_instruction := administrative_instruction host_function.
 
 Let vs_to_es := @vs_to_es host_function.
 
-Let executable_host := executable_host host_function.
+Let executable_host := executable_host host_function memory_repr.
 Variable executable_host_instance : executable_host.
 Let host_event := host_event executable_host_instance.
 
 Let host_monad : Monad host_event := host_monad executable_host_instance.
 Let host_apply : store_record -> function_type -> host_function -> seq value ->
                  host_event (option (store_record * result)) :=
-  @host_apply _ executable_host_instance.
+  @host_apply _ _ executable_host_instance.
 
 Section ITreeExtract.
 (** Some helper functions to extract an interactive tree to a simple-to-interact-with function,
@@ -91,8 +91,8 @@ Canonical Structure res_eqMixin := EqMixin eqresP.
 Canonical Structure res_eqType := Eval hnf in EqType res res_eqMixin.
 
 Let res_step := res_step host_function.
-Let res_tuple := res_tuple host_function.
-Let config_one_tuple_without_e := config_one_tuple_without_e host_function.
+Let res_tuple := res_tuple host_function memory_repr.
+Let config_one_tuple_without_e := config_one_tuple_without_e host_function memory_repr.
 
 Definition crash_error : res_step := RS_crash C_error.
 
@@ -159,18 +159,18 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
   (** testops **)
   | AI_basic (BI_testop T_i32 testop) =>
     if ves is (VAL_int32 c) :: ves' then
-      ret (s, f, RS_normal (vs_to_es ((VAL_int32 (wasm_bool (@app_testop_i i32t testop c))) :: ves')))
+      ret (s, f, RS_normal (vs_to_es ((VAL_int32 (numerics.wasm_bool (@app_testop_i numerics.i32t testop c))) :: ves')))
     else ret (s, f, crash_error)
   | AI_basic (BI_testop T_i64 testop) =>
     if ves is (VAL_int64 c) :: ves' then
-      ret (s, f, RS_normal (vs_to_es ((VAL_int32 (wasm_bool (@app_testop_i i64t testop c))) :: ves')))
+      ret (s, f, RS_normal (vs_to_es ((VAL_int32 (numerics.wasm_bool (@app_testop_i numerics.i64t testop c))) :: ves')))
     else ret (s, f, crash_error)
   | AI_basic (BI_testop _ _) => ret (s, f, crash_error)
 
   (** relops **)
   | AI_basic (BI_relop t op) =>
     if ves is v2 :: v1 :: ves' then
-      ret (s, f, RS_normal (vs_to_es (VAL_int32 (wasm_bool (app_relop op v1 v2)) :: ves')))
+      ret (s, f, RS_normal (vs_to_es (VAL_int32 (numerics.wasm_bool (app_relop op v1 v2)) :: ves')))
     else ret (s, f, crash_error)
              
   (** convert and reinterpret **)
@@ -200,7 +200,7 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
 
   | AI_basic BI_select =>
     if ves is (VAL_int32 c) :: v2 :: v1 :: ves' then
-      if c == Wasm_int.int_zero i32m
+      if c == numerics.Wasm_int.int_zero numerics.i32m
       then ret (s, f, RS_normal (vs_to_es (v2 :: ves')))
       else ret (s, f, RS_normal (vs_to_es (v1 :: ves')))
     else ret (s, f, crash_error)
@@ -224,7 +224,7 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
 
   | AI_basic (BI_if tf es1 es2) =>
     if ves is VAL_int32 c :: ves' then
-      if c == Wasm_int.int_zero i32m
+      if c == numerics.Wasm_int.int_zero numerics.i32m
       then ret (s, f, RS_normal (vs_to_es ves' ++ [::AI_basic (BI_block tf es2)]))
       else ret (s, f, RS_normal (vs_to_es ves' ++ [::AI_basic (BI_block tf es1)]))
     else ret (s, f, crash_error)
@@ -232,13 +232,13 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
   | AI_basic (BI_br j) => ret (s, f, RS_break j ves)
   | AI_basic (BI_br_if j) =>
     if ves is VAL_int32 c :: ves' then
-      if c == Wasm_int.int_zero i32m
+      if c == numerics.Wasm_int.int_zero numerics.i32m
       then ret (s, f, RS_normal (vs_to_es ves'))
       else ret (s, f, RS_normal (vs_to_es ves' ++ [::AI_basic (BI_br j)]))
     else ret (s, f, crash_error)
   | AI_basic (BI_br_table js j) =>
     if ves is VAL_int32 c :: ves' then
-      let: k := Wasm_int.nat_of_uint i32m c in
+      let: k := numerics.Wasm_int.nat_of_uint numerics.i32m c in
       if k < length js
       then
         expect (List.nth_error js k) (fun js_at_k =>
@@ -254,7 +254,7 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
 
   | AI_basic (BI_call_indirect j) =>
     if ves is VAL_int32 c :: ves' then
-      match stab s f.(f_inst) (Wasm_int.nat_of_uint i32m c) with
+      match stab s f.(f_inst) (numerics.Wasm_int.nat_of_uint numerics.i32m c) with
       | Some cl =>
         if stypes s f.(f_inst) j == Some (cl_type cl)
         then ret (s, f, RS_normal (vs_to_es ves' ++ [::AI_invoke cl]))
@@ -304,7 +304,7 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
           (fun j =>
              if List.nth_error s.(s_mems) j is Some mem_s_j then
                expect
-                 (load (mem_s_j) (Wasm_int.N_of_uint i32m k) off (t_length t))
+                 (load (mem_s_j) (numerics.Wasm_int.N_of_uint numerics.i32m k) off (t_length t))
                  (fun bs => ret (s, f, RS_normal (vs_to_es (wasm_deserialise bs t :: ves'))))
                  (ret (s, f, RS_normal (vs_to_es ves' ++ [::AI_trap])))
              else ret (s, f, crash_error))
@@ -318,7 +318,7 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
           (fun j =>
              if List.nth_error s.(s_mems) j is Some mem_s_j then
                expect
-                 (load_packed sx (mem_s_j) (Wasm_int.N_of_uint i32m k) off (tp_length tp) (t_length t))
+                 (load_packed sx (mem_s_j) (numerics.Wasm_int.N_of_uint numerics.i32m k) off (tp_length tp) (t_length t))
                  (fun bs => ret (s, f, RS_normal (vs_to_es (wasm_deserialise bs t :: ves'))))
                  (ret (s, f, RS_normal (vs_to_es ves' ++ [::AI_trap])))
              else ret (s, f, crash_error))
@@ -334,7 +334,7 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
             (fun j =>
                if List.nth_error s.(s_mems) j is Some mem_s_j then
                  expect
-                   (store mem_s_j (Wasm_int.N_of_uint i32m k) off (bits v) (t_length t))
+                   (store mem_s_j (numerics.Wasm_int.N_of_uint numerics.i32m k) off (bits v) (t_length t))
                    (fun mem' =>
                       (ret (upd_s_mem s (update_list_at s.(s_mems) j mem'), f, RS_normal (vs_to_es ves'))))
                    (ret (s, f, RS_normal (vs_to_es ves' ++ [::AI_trap])))
@@ -352,7 +352,7 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
             (fun j =>
                if List.nth_error s.(s_mems) j is Some mem_s_j then
                  expect
-                   (store_packed mem_s_j (Wasm_int.N_of_uint i32m k) off (bits v) (tp_length tp))
+                   (store_packed mem_s_j (numerics.Wasm_int.N_of_uint numerics.i32m k) off (bits v) (tp_length tp))
                    (fun mem' =>
                       (ret (upd_s_mem s (update_list_at s.(s_mems) j mem'), f, RS_normal (vs_to_es ves'))))
                    (ret (s, f, RS_normal (vs_to_es ves' ++ [::AI_trap])))
@@ -366,7 +366,7 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
         (smem_ind s f.(f_inst))
         (fun j =>
            if List.nth_error s.(s_mems) j is Some s_mem_s_j then
-             (ret (s, f, RS_normal (vs_to_es (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat (mem_size s_mem_s_j))) :: ves))))
+             (ret (s, f, RS_normal (vs_to_es (VAL_int32 (numerics.Wasm_int.int_of_Z numerics.i32m (Z.of_nat (mem_size s_mem_s_j))) :: ves))))
            else ret (s, f, crash_error))
         (ret (s, f, crash_error))
 
@@ -377,10 +377,10 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
           (fun j =>
             if List.nth_error s.(s_mems) j is Some s_mem_s_j then
               let: l := mem_size s_mem_s_j in
-              let: mem' := mem_grow s_mem_s_j (Wasm_int.N_of_uint i32m c) in
+              let: mem' := mem_grow s_mem_s_j (numerics.Wasm_int.N_of_uint numerics.i32m c) in
               if mem' is Some mem'' then
                 ret (upd_s_mem s (update_list_at s.(s_mems) j mem''), f,
-                     RS_normal (vs_to_es (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat l)) :: ves')))
+                     RS_normal (vs_to_es (VAL_int32 (numerics.Wasm_int.int_of_Z numerics.i32m (Z.of_nat l)) :: ves')))
               else ret (s, f, crash_error)
             else ret (s, f, crash_error))
           (ret (s, f, crash_error))
@@ -585,12 +585,12 @@ Module Target := convert_target_monad EH TM.
 Import Target.
 
 Definition run_step
-  : depth -> instance -> config_tuple -> monad res_tuple :=
-  @run_step_extraction_eqType host_function executable_host_instance
+  : depth -> instance -> config_tuple EH.memory_repr -> monad (res_tuple EH.memory_repr) :=
+  @run_step_extraction_eqType host_function memory_repr executable_host_instance
     monad monad_functor monad_monad monad_Iter convert.
 Definition run_v
-  : depth -> instance -> config_tuple -> monad (store_record * res) :=
-  @run_v_extraction_eqType host_function executable_host_instance
+  : depth -> instance -> config_tuple EH.memory_repr -> monad (store_record EH.memory_repr * res) :=
+  @run_v_extraction_eqType host_function memory_repr executable_host_instance
     monad monad_functor monad_monad monad_Iter convert.
 
 (** State whether a list of administrative instruction is a final value. **)
