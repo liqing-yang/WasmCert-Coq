@@ -14,18 +14,30 @@ Unset Printing Implicit Defensive.
 Section Host.
 
 Variable host_function : eqType.
+Variable memory_repr : memoryType.
 
-Section With_memory.
-  Context {Mem_T} `{Memory Mem_T}.
-Let store_recordwh := @store_record Mem_T host_function.
-Let function_closurewh := function_closure host_function.
+Let store_record := store_record host_function.
+Let function_closure := function_closure host_function.
 Let administrative_instruction := administrative_instruction host_function.
 Let lholed := lholed host_function.
 
+Check Memory.mem_lookup.
+Check Equality.sort.
+Check Memory.class_of.
 
-Definition read_bytes (m : memory) (n : N) (l : nat) : bytes :=
+Definition read_bytes (m : memory_repr) (start_idx : N) (l : nat) : bytes.
+apply (@List.map N).
+move => off.
+set idx := BinNatDef.N.add start_idx (N.of_nat off).
+move: (Memory.mem_lookup (Memory.sort memory_repr)).
+move => H.
+
+(* TODO: not enough sort magic *)
+Definition read_bytes (m : Memory.sort memory_repr) (start_idx : N) (l : nat) : bytes :=
   List.map
-    (fun k => Byte_array.get m.(mem_data).(dv_array) (BinNatDef.N.add n (N.of_nat k)))
+    (fun off =>
+      let idx := BinNatDef.N.add start_idx (N.of_nat off) in
+      @Memory.mem_lookup m idx m.(mem_data) )
     (iota 0 l).
 
 Definition write_bytes (m : memory) (n : N) (bs : bytes) : memory := {|

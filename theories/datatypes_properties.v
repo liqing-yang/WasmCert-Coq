@@ -218,6 +218,7 @@ Canonical Structure instance_eqType := Eval hnf in EqType instance instance_eqMi
 Section Host.
 
 Variable host_function : eqType.
+Variable memory_repr : memoryType.
 
 Let function_closure := @function_closure host_function.
 Let administrative_instruction := administrative_instruction host_function.
@@ -260,23 +261,18 @@ Definition eqglobalP : Equality.axiom global_eqb :=
 Canonical Structure global_eqMixin := EqMixin eqglobalP.
 Canonical Structure global_eqType := Eval hnf in EqType global global_eqMixin.
 
-Section With_memory.
-Context {Mem_T : Type} `{Memory Mem_T}.
-Let store_recordwh := @store_record host_function Mem_T.
+(* TODO: the memory structure does not have enough magic to infer the sort? *)
+Let store_record := @store_record host_function (Memory.sort memory_repr).
 
-Definition store_record_eq_dec : forall v1 v2 : store_recordwh, {v1 = v2} + {v1 <> v2}.
-Proof.
-  decidable_equality. Defined.
-Admitted. (* TODO: something gets confused with typeclasses
-
-   *)
+Definition store_record_eq_dec : forall v1 v2 : store_record, {v1 = v2} + {v1 <> v2}.
+Proof. decidable_equality. Defined.
 
 Definition store_record_eqb v1 v2 : bool := store_record_eq_dec v1 v2.
 Definition eqstore_recordP : Equality.axiom store_record_eqb :=
   eq_dec_Equality_axiom store_record_eq_dec.
 
 Canonical Structure store_record_eqMixin := EqMixin eqstore_recordP.
-Canonical Structure store_record_eqType := Eval hnf in EqType store_recordwh store_record_eqMixin.
+Canonical Structure store_record_eqType := Eval hnf in EqType store_record store_record_eqMixin.
 
 Definition frame_eq_dec : forall v1 v2 : frame, {v1 = v2} + {v1 <> v2}.
 Proof. decidable_equality. Defined.
@@ -396,8 +392,6 @@ Definition eqres_stepP : Equality.axiom res_step_eqb :=
 
 Canonical Structure res_step_eqMixin := EqMixin eqres_stepP.
 Canonical Structure res_step_eqType := Eval hnf in EqType res_step res_step_eqMixin.
-
-End With_memory.
 
 End Host.
 

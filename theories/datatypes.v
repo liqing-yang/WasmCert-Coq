@@ -314,6 +314,7 @@ Section Host.
 
 (** We assume a family of host functions. **)
 Variable host_function : Type.
+Variable memory_repr : Type.
 
 Definition funcaddr := immediate (* TODO: should be funcidx *).
 Definition tableaddr := immediate (* TODO: should be tableidx *).
@@ -522,10 +523,8 @@ Inductive res_step : Type :=
   | RS_normal : seq administrative_instruction -> res_step
   .
 
-Section With_memory.
-Context {Mem_T : Type} `{Memory Mem_T}.
 Record memory : Type := {
-  mem_data : Mem_T;
+  mem_data : memory_repr;
   mem_max_opt: option N; (* TODO: should be u32 *)
 }.
 
@@ -551,8 +550,6 @@ Definition config_one_tuple_without_e: Type :=
 
 Definition res_tuple : Type :=
   store_record * frame * res_step.
-
-End With_memory.
 
 End Host.
 
