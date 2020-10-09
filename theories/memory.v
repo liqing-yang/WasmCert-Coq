@@ -1,15 +1,9 @@
 (** a typeclass for a Wasm memory *)
 (* (C) J. Pichon - see LICENSE.txt *)
 
-From mathcomp Require Import ssreflect eqtype.
 Require Import BinNat.
 From Wasm Require Import bytes.
-
-(*
-From mathcomp Require Import ssreflect eqtype seq.
-Require Import BinNat Lia.
-From Wasm Require Import numerics bytes array.
-*)
+From mathcomp Require Import ssreflect ssrbool ssrfun eqtype.
 
 Module Memory.
 
@@ -64,7 +58,13 @@ Definition mem_ax_length_constant_update
   (mem_update : mem_update_t Mem_t) :=
   forall i b mem mem', Some mem' = mem_update i b mem -> mem_length mem' = mem_length mem.
 
-Record mixin_of (Mem_t : eqType) := Mixin {
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Section ClassDef.
+
+Record mixin_of (Mem_t : Type) : Type := Mixin {
   mem_make : byte -> N -> Mem_t;
   mem_length : Mem_t -> N;
   mem_grow : mem_grow_t Mem_t;
@@ -77,10 +77,36 @@ Record mixin_of (Mem_t : eqType) := Mixin {
   _ : mem_ax_length_constant_update Mem_t mem_make mem_length mem_grow mem_lookup mem_update;
 }.
 
-Notation class_of := mixin_of.
+Set Primitive Projections.
+Record class_of (T : Type) : Type := Class {base : Equality.mixin_of T; mixin : mixin_of T}.
+Unset Primitive Projections.
+Local Coercion base : class_of >->  Equality.class_of.
 
-Structure type : Type := Pack {sort :> eqType; class : class_of sort; }.
+Structure type : Type := Pack {sort; _ : class_of sort; }.
+Local Coercion sort : type >-> Sortclass.
+
+Variables (T : Type) (cT : type).
+Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
+Definition clone c of phant_id class c := @Pack T c.
+Let xT := let: Pack T _ := cT in T.
+Notation xclass := (class : class_of xT).
+
+Definition pack m :=
+  fun b bT & phant_id (Equality.class bT) b => Pack (@Class T b m).
+
+Definition eqType := @Equality.Pack cT xclass.
+
+End ClassDef.
+
+Module Import Exports.
+Coercion base : class_of >-> Equality.class_of.
+Coercion sort : type >-> Sortclass.
+Coercion eqType : type >-> Equality.type.
+Canonical eqType.
+Notation memoryType := type.
+Notation memoryMixin := mixin_of.
+Notation MemoryType T m := (@pack T m _ _ id).
+
+End Exports.
 
 End Memory.
-
-Notation memoryType := Memory.type.

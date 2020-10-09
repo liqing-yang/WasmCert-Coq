@@ -164,15 +164,10 @@ Canonical Structure memory_list_eqType := Eval hnf in EqType memory_list memory_
 
 Definition list_memoryMixin :=
   Memory.Mixin
-    memory_list
-    mem_make
-    mem_length
-    mem_grow
-    mem_lookup
-    mem_update
     memory_list_ax_lookup_out_of_bounds
     memory_list_ax_lookup_make
     memory_list_ax_lookup_update
     memory_list_ax_lookup_skip
     memory_list_ax_length_constant_update.
-Canonical list_memoryType := @Memory.Pack memory_list_eqType list_memoryMixin.
+Definition list_memoryClass := Memory.Class memory_list_eqMixin list_memoryMixin.
+Canonical list_memoryType := @Memory.Pack memory_list list_memoryClass.

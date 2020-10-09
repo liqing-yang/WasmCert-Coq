@@ -1,7 +1,8 @@
 (** Wasm type checker **)
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
-Require Import common.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
+Require Import common memory.
+Import Memory.Exports.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -13,6 +14,7 @@ Require Import operations typing datatypes_properties.
 Section Host.
 
 Variable host_function : eqType.
+Variable memory_repr : memoryType.
 
 Let store_record := store_record host_function.
 Let function_closure := function_closure host_function.
@@ -444,10 +446,10 @@ Definition cl_type_check (s : store_record) (cl : function_closure) : bool :=
     some of them.
 *)
 
-Definition cl_type_check_single (s:store_record) (f:function_closure):=
+Definition cl_type_check_single (s : store_record memory_repr) (f : function_closure) :=
   exists tf, cl_typing s f tf.
 
-Definition tabcl_agree (s : store_record) (tcl_index : option nat) : Prop :=
+Definition tabcl_agree (s : store_record memory_repr) (tcl_index : option nat) : Prop :=
   match tcl_index with
   | None => True
   | Some n => let tcl := List.nth_error (s_funcs s) n in
@@ -457,23 +459,23 @@ Definition tabcl_agree (s : store_record) (tcl_index : option nat) : Prop :=
     end
   end.
 
-Definition tabsize_agree (t: tableinst) : Prop :=
+Definition tabsize_agree (t : tableinst) : Prop :=
   match table_max_opt t with
   | None => True
   | Some n => tab_size t <= n
   end.
 
-Definition tab_agree (s: store_record) (t: tableinst): Prop :=
+Definition tab_agree (s : store_record memory_repr) (t : tableinst): Prop :=
   List.Forall (tabcl_agree s) (t.(table_data)) /\
   tabsize_agree t.
 
-Definition mem_agree (m : memory) : Prop :=
+Definition mem_agree (m : memory memory_repr) : Prop :=
   match (mem_max_opt m) with
   | None => True
   | Some n => mem_size m <= n
   end.
 
-Definition store_typing (s : store_record) : Prop :=
+Definition store_typing (s : store_record memory_repr) : Prop :=
   match s with
   | Build_store_record fs tclss mss gs =>
     List.Forall (cl_type_check_single s) fs /\
@@ -481,7 +483,7 @@ Definition store_typing (s : store_record) : Prop :=
     List.Forall mem_agree mss
   end.
 
-Inductive config_typing : store_record -> frame -> seq administrative_instruction -> seq value_type -> Prop :=
+Inductive config_typing : store_record memory_repr -> frame -> seq administrative_instruction -> seq value_type -> Prop :=
 | mk_config_typing :
   forall s f es ts,
   store_typing s ->

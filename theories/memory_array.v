@@ -130,15 +130,10 @@ Canonical memory_array_eqType := @Equality.Pack memory_array memory_array_eqMixi
 
 Definition array_memoryMixin :=
   Memory.Mixin
-    memory_array
-    mem_make
-    mem_length
-    mem_grow
-    mem_lookup
-    mem_update
     memory_array_ax_lookup_out_of_bounds
     memory_array_ax_lookup_make
     memory_array_ax_lookup_update
     memory_array_ax_lookup_skip
     memory_array_ax_length_constant_update.
-Canonical array_memoryType := @Memory.Pack memory_array_eqType array_memoryMixin.
+Definition array_memoryClass := Memory.Class memory_array_eqMixin array_memoryMixin.
+Canonical array_memoryType := @Memory.Pack memory_array array_memoryClass.

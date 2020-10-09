@@ -2,8 +2,8 @@
 (* (C) M. Bodin - see LICENSE.txt *)
 
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
-From Wasm Require Import common datatypes operations type_checker.
 From ITree Require Import ITree ITreeFacts.
+From Wasm Require Import common datatypes operations type_checker memory.
 
 Import Monads.
 
@@ -22,11 +22,12 @@ Set Implicit Arguments.
 
 Section Predicate.
 
-(** We assume a set of host functions. **)
+(** We assume some host functions. **)
 Variable host_function : eqType.
+Variable memory_repr : Memory.Exports.memoryType.
 
-Let store_record := store_record host_function.
-Let store_extension : store_record -> store_record -> bool := @store_extension _.
+Let store_record := store_record host_function memory_repr.
+Let store_extension : store_record -> store_record -> bool := @store_extension _ _.
 
 (** The application of a host function either:
   - returns [Some (st', result)], returning a new Wasm store and a result (which can be [Trap]),
@@ -68,8 +69,9 @@ Section Executable.
 (** We assume a set of host functions.
   To help with the extraction, it is expressed as a [Type] and not an [eqType]. **)
 Variable host_function : Type.
+Variable memory_repr : Memory.Exports.memoryType.
 
-Let store_record := store_record host_function.
+Let store_record := store_record host_function memory_repr.
 Record executable_host := make_executable_host {
     host_event : Type -> Type (** The events that the host actions can yield. **) ;
     host_monad : Monad host_event (** They form a monad. **) ;
@@ -87,11 +89,12 @@ Arguments host_apply [_ _].
 Section Parameterised.
 
 Variable host_function : eqType.
+Variable memory_repr : Memory.Exports.memoryType.
 
-Let store_record := store_record host_function.
+Let store_record := store_record host_function memory_repr.
 
-Let host : Type := host host_function.
-Let executable_host : Type := executable_host host_function.
+Let host : Type := host host_function memory_repr.
+Let executable_host : Type := executable_host host_function memory_repr.
 
 Variable phost : host.
 Variable ehost : executable_host.
@@ -121,9 +124,10 @@ Parameter host_function_eq_dec : forall f1 f2 : host_function, {f1 = f2} + {f1 <
 Parameter host_event : Type -> Type.
 Parameter host_ret : forall t : Type, t -> host_event t.
 Parameter host_bind : forall t u : Type, host_event t -> (t -> host_event u) -> host_event u.
+Parameter memory_repr : Memory.Exports.memoryType.
 
-Parameter host_apply : store_record host_function -> function_type -> host_function -> seq value ->
-                       host_event (option (store_record host_function * result)).
+Parameter host_apply : store_record host_function memory_repr -> function_type -> host_function -> seq value ->
+                       host_event (option (store_record host_function memory_repr * result)).
 
 End Executable_Host.
 
@@ -142,7 +146,7 @@ Canonical Structure host_function_eqMixin := EqMixin host_functionP.
 Canonical Structure host_function :=
   Eval hnf in EqType _ host_function_eqMixin.
 
-Definition executable_host := executable_host H.host_function.
+Definition executable_host := executable_host H.host_function H.memory_repr.
 Definition store_record := store_record H.host_function.
 Definition config_tuple := config_tuple H.host_function.
 Definition administrative_instruction := administrative_instruction H.host_function.
@@ -176,7 +180,9 @@ Definition host_function := void.
 Definition host_event := ident.
 Definition host_ret := @ret _ Monad_ident.
 Definition host_bind := @bind _ Monad_ident.
-Definition store_record := store_record host_function.
+Require Import memory_array.
+Definition memory_repr := array_memoryType.
+Definition store_record := store_record host_function memory_repr.
 Definition host_apply (_ : store_record) (_ : function_type) :=
   of_void (seq value -> ident (option (store_record * result))).
 
@@ -190,7 +196,7 @@ Module DummyHosts.
 Module Exec := convert_to_executable_host DummyHost.
 Export Exec.
 
-Definition host : Type := host host_function.
+Definition host : Type := host host_function memory_repr.
 
 Definition host_instance : host.
 Proof.

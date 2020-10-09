@@ -1,6 +1,6 @@
 (** Wasm AST to binary.
 Breaks non-determinism ties; see binary_format_spec.v for the spec. *)
-Require Import datatypes_properties numerics.
+Require Import datatypes_properties numerics bytes.
 From compcert Require Integers.
 Require Import Byte.
 Require leb128.

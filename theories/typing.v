@@ -1,6 +1,8 @@
 (** Wasm typing rules **)
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
+Require Import memory.
+Import Memory.Exports.
 From Wasm Require Import operations.
 
 (**
@@ -25,9 +27,10 @@ Unset Printing Implicit Defensive.
 Section Host.
 
 Variable host_function : eqType.
+Variable memory_repr : memoryType.
 
 Let function_closure := function_closure host_function.
-Let store_record := store_record host_function.
+Let store_record := store_record host_function memory_repr.
 Let administrative_instruction := administrative_instruction host_function.
 Let lholed := lholed host_function.
 
@@ -303,11 +306,11 @@ Definition global_agree (g : global) (tg : global_type) : bool :=
 Definition globals_agree (gs : seq global) (n : nat) (tg : global_type) : bool :=
   (n < length gs) && (option_map (fun g => global_agree g tg) (List.nth_error gs n) == Some true).
 
-Definition mem_typing (m : memory) (m_t : memory_type) : bool :=
+Definition mem_typing (m : memory memory_repr) (m_t : memory_type) : bool :=
   (m_t.(lim_min) <= mem_size m) &&
   (m.(mem_max_opt) == m_t.(lim_max)) (* TODO: mismatch *).
 
-Definition memi_agree (ms : list memory) (n : nat) (mem_t : memory_type) : bool :=
+Definition memi_agree (ms : list (memory memory_repr)) (n : nat) (mem_t : memory_type) : bool :=
   (n < length ms) &&
   match List.nth_error ms n with
   | Some mem => mem_typing mem mem_t

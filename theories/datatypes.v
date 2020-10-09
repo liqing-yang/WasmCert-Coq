@@ -8,6 +8,7 @@
 
 Require Import BinNat.
 From Wasm Require Import common numerics bytes memory.
+Import Memory.Exports.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From compcert Require common.Memdata.
 
@@ -314,7 +315,7 @@ Section Host.
 
 (** We assume a family of host functions. **)
 Variable host_function : Type.
-Variable memory_repr : Type.
+Variable memory_repr : memoryType.
 
 Definition funcaddr := immediate (* TODO: should be funcidx *).
 Definition tableaddr := immediate (* TODO: should be tableidx *).
@@ -524,7 +525,7 @@ Inductive res_step : Type :=
   .
 
 Record memory : Type := {
-  mem_data : memory_repr;
+  mem_data : Memory.sort memory_repr; (* TODO: not enough implicit conversions? *)
   mem_max_opt: option N; (* TODO: should be u32 *)
 }.
 

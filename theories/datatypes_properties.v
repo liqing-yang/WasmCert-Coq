@@ -2,6 +2,7 @@
 (* (C) M. Bodin, J. Pichon - see LICENSE.txt *)
 
 Require Import bytes common memory.
+Import memory.Memory.Exports.
 Require Export datatypes.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 
@@ -261,8 +262,7 @@ Definition eqglobalP : Equality.axiom global_eqb :=
 Canonical Structure global_eqMixin := EqMixin eqglobalP.
 Canonical Structure global_eqType := Eval hnf in EqType global global_eqMixin.
 
-(* TODO: the memory structure does not have enough magic to infer the sort? *)
-Let store_record := @store_record host_function (Memory.sort memory_repr).
+Let store_record := @store_record host_function memory_repr.
 
 Definition store_record_eq_dec : forall v1 v2 : store_record, {v1 = v2} + {v1 <> v2}.
 Proof. decidable_equality. Defined.

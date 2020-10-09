@@ -2,6 +2,7 @@
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
 
 From Wasm Require Import common memory bytes numerics.
+Import Memory.Exports.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From compcert Require lib.Floats.
 From Wasm Require Export datatypes_properties list_extra.
@@ -16,44 +17,39 @@ Section Host.
 Variable host_function : eqType.
 Variable memory_repr : memoryType.
 
-Let store_record := store_record host_function.
+Let store_record := store_record host_function memory_repr.
 Let function_closure := function_closure host_function.
 Let administrative_instruction := administrative_instruction host_function.
 Let lholed := lholed host_function.
 
-Check Memory.mem_lookup.
-Check Equality.sort.
-Check Memory.class_of.
+(** read `len` bytes from `m` starting at `start_idx` *)
+Definition read_bytes (m : Memory.sort memory_repr) (start_idx : N) (len : nat) : option bytes :=
+  those
+    (List.map
+      (fun off =>
+        let idx := BinNatDef.N.add start_idx (N.of_nat off) in
+        Memory.mem_lookup (Memory.mixin (Memory.class memory_repr)) idx m)
+      (iota 0 len)).
 
-Definition read_bytes (m : memory_repr) (start_idx : N) (l : nat) : bytes.
-apply (@List.map N).
-move => off.
-set idx := BinNatDef.N.add start_idx (N.of_nat off).
-move: (Memory.mem_lookup (Memory.sort memory_repr)).
-move => H.
+(** write bytes `bs` to `m` starting at `start_idx` *)
+Definition write_bytes (m : memory memory_repr) (start_idx : N) (bs : bytes) : option (memory memory_repr) :=
+  let x :=
+    list_extra.fold_lefti
+      (fun off dat_o b =>
+        match dat_o with
+        | None => None
+        | Some dat =>
+          let idx := BinNatDef.N.add start_idx (N.of_nat off) in
+          Memory.mem_update (Memory.mixin (Memory.class memory_repr)) idx b dat
+        end)
+      bs
+      (Some m.(mem_data)) in
+  match x with
+  | Some dat => Some {| mem_data := dat; mem_max_opt := m.(mem_max_opt); |}
+  | None => None
+  end.
 
-(* TODO: not enough sort magic *)
-Definition read_bytes (m : Memory.sort memory_repr) (start_idx : N) (l : nat) : bytes :=
-  List.map
-    (fun off =>
-      let idx := BinNatDef.N.add start_idx (N.of_nat off) in
-      @Memory.mem_lookup m idx m.(mem_data) )
-    (iota 0 l).
-
-Definition write_bytes (m : memory) (n : N) (bs : bytes) : memory := {|
-  mem_data := {|
-    dv_length := m.(mem_data).(dv_length);
-    dv_array :=
-      list_extra.fold_lefti
-        (fun i arr b =>
-          Byte_array.set arr (BinNatDef.N.add n (N.of_nat i)) b)
-        bs
-        m.(mem_data).(dv_array);
-  |};
-  mem_max_opt := m.(mem_max_opt);
-|}.
-
-Definition upd_s_mem (s : store_recordwh) (m : list memory) : store_recordwh := {|
+Definition upd_s_mem (s : store_record) (m : list (memory memory_repr)) : store_record := {|
   s_funcs := s.(s_funcs);
   s_tables := s.(s_tables);
   s_mems := m;
@@ -62,15 +58,20 @@ Definition upd_s_mem (s : store_recordwh) (m : list memory) : store_recordwh := 
 
 Definition page_size : N := (64 % N) * (1024 % N).
 
-Definition mem_length (m : memory) : N :=
-  m.(mem_data).(dv_length).
+(** length of a memory, in number of bytes *)
+Definition mem_length (m : memory memory_repr) : N :=
+  Memory.mem_length (Memory.mixin (Memory.class memory_repr)) m.(mem_data).
 
-Definition mem_size (m : memory) : N :=
+(** size of a memory, in number of pages *)
+Definition mem_size (m : memory memory_repr) : N :=
   N.div (mem_length m) page_size.
 
-Definition mem_grow (m : memory) (n : N) : option memory:=
-  let new_length := N.add (mem_length m) n in
-  let new_mem_data := {| dv_array := m.(mem_data).(dv_array); dv_length := new_length |} in
+(** Grow the memory a given number of bytes.
+  * @param len_delta: the number of bytes to grow the memory by
+  *)
+Definition mem_grow (m : memory memory_repr) (len_delta : N) : option (memory memory_repr) :=
+  let new_length := N.add (mem_length m) len_delta in
+  let new_mem_data := Memory.mem_grow (Memory.mixin (Memory.class memory_repr)) len_delta m.(mem_data) in
   match m.(mem_max_opt) with
   | Some maxlim =>
     if N.leb new_length maxlim then
@@ -88,9 +89,9 @@ Definition mem_grow (m : memory) (n : N) : option memory:=
 
 (* TODO: We crucially need documentation here. *)
 
-Definition load (m : memory) (n : N) (off : static_offset) (l : nat) : option bytes :=
+Definition load (m : memory memory_repr) (n : N) (off : static_offset) (l : nat) : option bytes :=
   if N.leb (N.add n (N.add off (N.of_nat l))) (mem_length m)
-  then Some (read_bytes m (N.add n off) l)
+  then read_bytes m.(mem_data) (N.add n off) l
   else None.
 
 Definition sign_extend (s : sx) (l : nat) (bs : bytes) : bytes :=
@@ -101,12 +102,12 @@ Definition sign_extend (s : sx) (l : nat) (bs : bytes) : bytes :=
   bytes_takefill byte l bytes
 *)
 
-Definition load_packed (s : sx) (m : memory) (n : N) (off : static_offset) (lp : nat) (l : nat) : option bytes.bytes :=
+Definition load_packed (s : sx) (m : memory memory_repr) (n : N) (off : static_offset) (lp : nat) (l : nat) : option bytes.bytes :=
   option_map (sign_extend s l) (load m n off lp).
 
-Definition store (m : memory) (n : N) (off : static_offset) (bs : bytes) (l : nat) : option memory :=
+Definition store (m : memory memory_repr) (n : N) (off : static_offset) (bs : bytes) (l : nat) : option (memory memory_repr) :=
   if N.leb (n + off + N.of_nat l) (mem_length m)
-  then Some (write_bytes m (n + off) (bytes_takefill #00 l bs))
+  then write_bytes m (n + off) (bytes_takefill #00 l bs)
   else None.
 
 Definition store_packed := store.
@@ -348,7 +349,7 @@ Definition app_relop (op: relop) (v1: value) (v2: value) :=
 Definition types_agree (t : value_type) (v : value) : bool :=
   (typeof v) == t.
 
-Definition cl_type (cl : function_closurewh) : function_type :=
+Definition cl_type (cl : function_closure) : function_type :=
   match cl with
   | FC_func_native _ tf _ _ => tf
   | FC_func_host tf _ => tf
@@ -363,17 +364,17 @@ Definition option_bind (A B : Type) (f : A -> option B) (x : option A) :=
   | Some y => f y
   end.
 
-Definition stypes (s : store_recordwh) (i : instance) (j : nat) : option function_type :=
+Definition stypes (s : store_record) (i : instance) (j : nat) : option function_type :=
   List.nth_error (inst_types i) j.
 (* TODO: optioned *)
 
-Definition sfunc_ind (s : store_recordwh) (i : instance) (j : nat) : option nat :=
+Definition sfunc_ind (s : store_record) (i : instance) (j : nat) : option nat :=
   List.nth_error (inst_funcs i) j.
 
 Print function_closure.
 Print store_record.
 
-Definition sfunc (s : store_recordwh) (i : instance) (j : nat) : option function_closurewh :=
+Definition sfunc (s : store_record) (i : instance) (j : nat) : option function_closure :=
   option_bind (List.nth_error (s_funcs s)) (sfunc_ind s i j).
 
 Definition sglob_ind (s : store_record) (i : instance) (j : nat) : option nat :=
@@ -471,7 +472,7 @@ Definition tab_extension (t1 t2 : tableinst) :=
   (tab_size t1 <= tab_size t2) &&
   (t1.(table_max_opt) == t2.(table_max_opt)).
 
-Definition mem_extension (m1 m2 : memory) :=
+Definition mem_extension (m1 m2 : memory memory_repr) :=
   (mem_size m1 <= mem_size m2) && (mem_max_opt m1 == mem_max_opt m2).
 
 Definition store_extension (s s' : store_record) : bool :=

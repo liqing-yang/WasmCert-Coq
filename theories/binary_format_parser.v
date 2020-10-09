@@ -33,21 +33,21 @@ Definition exact_byte (b : byte) {n} : byte_parser byte n :=
 Definition parse_u32_as_N {n} : byte_parser N n :=
   extract parse_unsigned n.
 
-Definition parse_u32_as_int32 {n} : byte_parser Wasm_int.Int32.int n :=
+Definition parse_u32_as_int32 {n} : byte_parser numerics.Wasm_int.Int32.int n :=
   (* TODO: limit size *)
-  (fun x => Wasm_int.Int32.repr (BinIntDef.Z.of_N x)) <$> (extract parse_unsigned n).
+  (fun x => numerics.Wasm_int.Int32.repr (BinIntDef.Z.of_N x)) <$> (extract parse_unsigned n).
 
-Definition parse_u32_zero_as_int32 {n} : byte_parser Wasm_int.Int32.int n :=
+Definition parse_u32_zero_as_int32 {n} : byte_parser numerics.Wasm_int.Int32.int n :=
   (* TODO: limit size *)
-  exact_byte x00 $> Wasm_int.Int32.zero.
+  exact_byte x00 $> numerics.Wasm_int.Int32.zero.
 
-Definition parse_s32 {n} : byte_parser Wasm_int.Int32.int n :=
+Definition parse_s32 {n} : byte_parser numerics.Wasm_int.Int32.int n :=
   (* TODO: limit size *)
-  (fun x => Wasm_int.Int32.repr x) <$> (extract parse_signed n).
+  (fun x => numerics.Wasm_int.Int32.repr x) <$> (extract parse_signed n).
 
-Definition parse_s64 {n} : byte_parser Wasm_int.Int64.int n :=
+Definition parse_s64 {n} : byte_parser numerics.Wasm_int.Int64.int n :=
   (* TODO: limit size *)
-  (fun x => Wasm_int.Int64.repr x) <$> (extract parse_signed n).
+  (fun x => numerics.Wasm_int.Int64.repr x) <$> (extract parse_signed n).
 
 Fixpoint k_plus_one_anyTok (k : nat) {n} : byte_parser (list byte) n :=
   match k with
@@ -55,17 +55,17 @@ Fixpoint k_plus_one_anyTok (k : nat) {n} : byte_parser (list byte) n :=
   | S k' => ((fun x xs => cons x xs) <$> anyTok) <*> k_plus_one_anyTok k'
   end.
 
-Definition parse_f32 {n} : byte_parser Wasm_float.FloatSize32.T n :=
-  (fun bs => Floats.Float32.of_bits (Integers.Int.repr (common.Memdata.decode_int (List.map compcert_byte_of_byte bs)))) <$> (k_plus_one_anyTok 3).
+Definition parse_f32 {n} : byte_parser numerics.Wasm_float.FloatSize32.T n :=
+  (fun bs => Floats.Float32.of_bits (Integers.Int.repr (common.Memdata.decode_int (List.map bytes.compcert_byte_of_byte bs)))) <$> (k_plus_one_anyTok 3).
 
-Definition parse_f64 {n} : byte_parser Wasm_float.FloatSize64.T n :=
-(fun bs => Floats.Float.of_bits (Integers.Int64.repr (common.Memdata.decode_int (List.map compcert_byte_of_byte bs)))) <$> (k_plus_one_anyTok 7).
+Definition parse_f64 {n} : byte_parser numerics.Wasm_float.FloatSize64.T n :=
+(fun bs => Floats.Float.of_bits (Integers.Int64.repr (common.Memdata.decode_int (List.map bytes.compcert_byte_of_byte bs)))) <$> (k_plus_one_anyTok 7).
 
 Definition parse_u32_as_nat {n} : byte_parser nat n :=
   (fun x => (N.to_nat x)) <$> parse_u32_as_N.
 
 Definition parse_vec_length {n} : byte_parser nat n :=
-  (fun x => (Wasm_int.nat_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => (numerics.Wasm_int.nat_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Fixpoint parse_vec_aux {B} {n} (f : byte_parser B n) (k : nat)
   : byte_parser (list B) n :=
@@ -81,25 +81,25 @@ Definition parse_vec {B} {n} (f : byte_parser B n) : byte_parser (list B) n :=
   (parse_vec_length >>= (fun k => parse_vec_aux f k)).
 
 Definition parse_labelidx {n} : byte_parser labelidx n :=
-  (fun x => Mk_labelidx (Wasm_int.nat_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => Mk_labelidx (numerics.Wasm_int.nat_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Definition parse_funcidx {n} : byte_parser funcidx n :=
-  (fun x => Mk_funcidx (Wasm_int.nat_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => Mk_funcidx (numerics.Wasm_int.nat_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Definition parse_tableidx {n} : byte_parser tableidx n :=
-  (fun x => Mk_tableidx (Wasm_int.nat_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => Mk_tableidx (numerics.Wasm_int.nat_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Definition parse_memidx {n} : byte_parser memidx n :=
-  (fun x => Mk_memidx (Wasm_int.nat_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => Mk_memidx (numerics.Wasm_int.nat_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Definition parse_typeidx {n} : byte_parser typeidx n :=
-  (fun x => Mk_typeidx (Wasm_int.nat_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => Mk_typeidx (numerics.Wasm_int.nat_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Definition parse_localidx {n} : byte_parser localidx n :=
-  (fun x => Mk_localidx (Wasm_int.nat_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => Mk_localidx (numerics.Wasm_int.nat_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Definition parse_globalidx {n} : byte_parser globalidx n :=
-  (fun x => Mk_globalidx (Wasm_int.nat_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => Mk_globalidx (numerics.Wasm_int.nat_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Definition parse_value_type {n} : byte_parser value_type n :=
   (exact_byte x7f $> T_i32) <|>
@@ -189,10 +189,10 @@ Definition parse_variable_instruction {n} : byte_parser basic_instruction n :=
   parse_global_set.
 
 Definition parse_alignment_exponent {n} : byte_parser BinNat.N.t n :=
-  (fun x => (Wasm_int.N_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => (numerics.Wasm_int.N_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Definition parse_static_offset {n} : byte_parser BinNat.N.t n :=
-  (fun x => (Wasm_int.N_of_uint i32m x)) <$> parse_u32_as_int32.
+  (fun x => (numerics.Wasm_int.N_of_uint numerics.i32m x)) <$> parse_u32_as_int32.
 
 Definition parse_memarg {n} : byte_parser (alignment_exponent * static_offset) n :=
   parse_alignment_exponent <&> parse_static_offset.
