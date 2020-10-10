@@ -371,9 +371,6 @@ Definition stypes (s : store_record) (i : instance) (j : nat) : option function_
 Definition sfunc_ind (s : store_record) (i : instance) (j : nat) : option nat :=
   List.nth_error (inst_funcs i) j.
 
-Print function_closure.
-Print store_record.
-
 Definition sfunc (s : store_record) (i : instance) (j : nat) : option function_closure :=
   option_bind (List.nth_error (s_funcs s)) (sfunc_ind s i j).
 
