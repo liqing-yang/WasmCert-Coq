@@ -17,7 +17,7 @@ Section Host.
 
 Variable host_function : eqType.
 
-Let administrative_instruction := administrative_instruction host_function.
+(*Let administrative_instruction := administrative_instruction host_function.
 Let const_list : seq administrative_instruction -> bool := @const_list _.
 Let v_to_e_list : seq value -> seq administrative_instruction := @v_to_e_list _.
 Let lfilled := @lfilled host_function.
@@ -25,7 +25,7 @@ Let lfilledInd := @lfilledInd host_function.
 Let es_is_basic := @es_is_basic host_function.
 Let to_e_list := @to_e_list host_function.
 Let e_is_trap := @e_is_trap host_function.
-Let es_is_trap := @es_is_trap host_function.
+Let es_is_trap := @es_is_trap host_function.*)
 
 
 Lemma const_list_concat: forall vs1 vs2,
@@ -85,11 +85,11 @@ Proof.
       case a; try by inversion 1; [idtac].
       move => b. case b; try by inversion 1.
       (* ask *)
-      fold (@split_vals_e host_function). move => v H.
+      fold split_vals_e. move => v H.
       by destruct (split_vals_e es).
   - move => a l H es es' HSplit. unfold split_vals_e in HSplit.
     destruct es => //. destruct a0 => //. destruct b => //.
-    fold (@split_vals_e host_function) in HSplit.
+    fold split_vals_e in HSplit.
     destruct (split_vals_e es) eqn:Heqn. inversion HSplit; subst.
     simpl. f_equal. by apply: H.
 Qed.
@@ -452,7 +452,6 @@ Ltac gen_ind_pre H :=
   let Ht := type of H in
   aux Ht.
 
-Print is_variable.
 (** Then, each of the associated parameters can be generalised. **)
 Ltac gen_ind_gen H :=
   let rec try_generalize t :=
@@ -577,13 +576,13 @@ Variable memory_repr : Memory.Exports.memoryType.
 
 Let store_record := store_record host_function memory_repr.
 Let function_closure := function_closure host_function.
-Let administrative_instruction := administrative_instruction host_function.
+(* Let administrative_instruction := administrative_instruction host_function. 
 Let const_list : seq administrative_instruction -> bool := @const_list _.
 Let v_to_e_list : seq value -> seq administrative_instruction := @v_to_e_list _.
 Let lfilled := @lfilled host_function.
 Let lfilledInd := @lfilledInd host_function.
 Let es_is_basic := @es_is_basic host_function.
-Let to_e_list := @to_e_list host_function.
+Let to_e_list := @to_e_list host_function.*)
 Let e_typing : store_record -> t_context -> seq administrative_instruction -> function_type -> Prop :=
   @e_typing _ _.
 
@@ -880,8 +879,8 @@ Lemma et_to_bet: forall s C es ts,
     be_typing C (to_b_list es) ts.
 Proof.
   move => s C es ts HBasic HType.
-  gen_ind_subst HType; unfold es_is_basic in *; basic_inversion.
-  + replace (to_b_list (operations.to_e_list bes)) with bes => //.
+  dependent induction HType; basic_inversion.
+  + replace (to_b_list (to_e_list bes)) with bes => //.
     by apply b_e_elim.
   + rewrite to_b_list_concat.
     eapply bet_composition.
@@ -996,7 +995,7 @@ Proof.
   - (* Invoke *)
     exists [::], t1s, t2s, t1s. repeat split => //=.
     + apply ety_a' => //. apply bet_weakening_empty_both. by apply bet_empty.
-    + by apply ety_invoke.
+    + by eapply ety_invoke; eauto.
   - (* Label *)
     exists [::], [::], t2s0, [::]. repeat split => //=.
     + by apply ety_a' => //.

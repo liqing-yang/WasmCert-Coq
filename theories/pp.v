@@ -16,8 +16,10 @@ Variable host_function : eqType.
 Variable memory_repr : Memory.Exports.memoryType.
 
 Let store_record := store_record host_function.
-Let administrative_instruction := administrative_instruction host_function.
+(*Let administrative_instruction := administrative_instruction host_function.*)
 Let function_closure := function_closure host_function.
+Let config_tuple := config_tuple host_function.
+Let res_tuple := res_tuple host_function.
 
 Variable show_host_function : host_function -> string.
 
@@ -344,9 +346,10 @@ Fixpoint pp_administrative_instruction (n : indentation) (e : administrative_ins
   match e with
   | AI_basic be => pp_basic_instruction n be
   | AI_trap => indent n (with_fg ae_style "trap" ++ newline)
-  | AI_invoke fc =>
-    indent n (with_fg ae_style "invoke" ++ newline) ++
-    pp_function_closure (n.+1) fc
+  | AI_invoke a =>
+    indent n (with_fg ae_style "invoke" ++ newline) ++ string_of_nat a
+  (*    pp_function_closure (n.+1) fc*)
+           
   | AI_label k es1 es2 =>
     indent n (with_fg ae_style "label " ++ string_of_nat k ++ newline) ++
     String.concat "" (List.map (pp_administrative_instruction (n.+1)) es1) ++
@@ -385,12 +388,12 @@ Definition pp_store (n : indentation) (s : store_record memory_repr) : string :=
   indent n ("memories" ++ newline) ++
   pp_memories (n.+1) s.(s_mems).
 
-Definition pp_config_tuple_except_store (cfg : config_tuple _ memory_repr) : string :=
+Definition pp_config_tuple_except_store (cfg : config_tuple memory_repr) : string :=
   let '(s, f, es) := cfg in
   pp_administrative_instructions 0 es ++
   "with values " ++ pp_values_hint_empty f.(f_locs) ++ newline.
 
-Definition pp_res_tuple_except_store (res_cfg : res_tuple _ memory_repr) : string :=
+Definition pp_res_tuple_except_store (res_cfg : res_tuple memory_repr) : string :=
   let '(s, f, res) := res_cfg in
   match res with
   | RS_crash _ =>
@@ -419,17 +422,17 @@ Import Exec.
 
 Section Show.
 
-Variable show_host_function : EH.host_function -> string.
+(*Variable show_host_function : EH.host_function -> string.*)
 
 Definition pp_values : list value -> string := pp_values.
 
 Definition pp_store : nat -> store_record memory_repr -> string := pp_store _ memory_repr.
 
 Definition pp_res_tuple_except_store : res_tuple memory_repr -> string :=
-  pp_res_tuple_except_store _ _ show_host_function.
+  pp_res_tuple_except_store _ _.
 
 Definition pp_config_tuple_except_store : config_tuple memory_repr -> string :=
-  pp_config_tuple_except_store _ _ show_host_function.
+  pp_config_tuple_except_store _ _.
 
 End Show.
 

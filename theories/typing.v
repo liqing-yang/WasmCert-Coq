@@ -4,6 +4,7 @@ From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 Require Import memory.
 Import Memory.Exports.
 From Wasm Require Import operations.
+From Coq Require Import NArith.
 
 (**
 There are three files related to typing:
@@ -31,8 +32,6 @@ Variable memory_repr : memoryType.
 
 Let function_closure := function_closure host_function.
 Let store_record := store_record host_function memory_repr.
-Let administrative_instruction := administrative_instruction host_function.
-Let lholed := lholed host_function.
 
 
 (* TODO: Documentation *)
@@ -306,8 +305,8 @@ Definition global_agree (g : global) (tg : global_type) : bool :=
 Definition globals_agree (gs : seq global) (n : nat) (tg : global_type) : bool :=
   (n < length gs) && (option_map (fun g => global_agree g tg) (List.nth_error gs n) == Some true).
 
-Definition mem_typing (m : memory memory_repr) (m_t : memory_type) : bool :=
-  (m_t.(lim_min) <= mem_size m) &&
+Definition mem_typing (m : memory) (m_t : memory_type) : bool :=
+  (N.leb m_t.(lim_min) (mem_size m)) &&
   (m.(mem_max_opt) == m_t.(lim_max)) (* TODO: mismatch *).
 
 Definition memi_agree (ms : list (memory memory_repr)) (n : nat) (mem_t : memory_type) : bool :=
@@ -502,7 +501,12 @@ Inductive cl_typing : store_record -> function_closure -> function_type -> Prop 
   | cl_typing_host : forall s tf h,
     cl_typing s (FC_func_host tf h) tf
   .
-  
+
+(*
+  e_typing is the extension of typing to administrative instructions. See appendix 5 for
+    some of them.
+*)
+
 Inductive e_typing : store_record -> t_context -> seq administrative_instruction -> function_type -> Prop :=
 | ety_a : forall s C bes tf,
   be_typing C bes tf -> e_typing s C (to_e_list bes) tf
@@ -519,9 +523,10 @@ Inductive e_typing : store_record -> t_context -> seq administrative_instruction
   s_typing s (Some ts) f es ts ->
   length ts = n ->
   e_typing s C [::AI_local n f es] (Tf [::] ts)
-| ety_invoke : forall s C cl tf,
+| ety_invoke : forall s a C cl tf,
+  List.nth_error s.(s_funcs) a = Some cl ->
   cl_typing s cl tf ->
-  e_typing s C [::AI_invoke cl] tf
+  e_typing s C [::AI_invoke a] tf
 | ety_label : forall s C e0s es ts t2s n,
   e_typing s C e0s (Tf ts t2s) ->
   e_typing s (upd_label C ([::ts] ++ tc_label C)) es (Tf [::] t2s) ->
@@ -549,6 +554,52 @@ Proof.
   - move => i ts bes t H /=; by inversion H.
   - move => f h H; by inversion H.
 Qed.
+
+Definition cl_type_check_single (s:store_record) (f:function_closure):=
+  exists tf, cl_typing s f tf.
+
+Definition tabcl_agree (s : store_record) (tcl_index : option nat) : Prop :=
+  match tcl_index with
+  | None => True
+  | Some n => n < size s.(s_funcs)
+(*  let tcl := List.nth_error (s_funcs s) n in
+    match tcl with
+    | None => False
+    | Some cl => cl_type_check_single s cl
+    end*)
+  end.
+
+Definition tabsize_agree (t: tableinst) : Prop :=
+  match table_max_opt t with
+  | None => True
+  | Some n => tab_size t <= n
+  end.
+
+Definition tab_agree (s: store_record) (t: tableinst): Prop :=
+  List.Forall (tabcl_agree s) (t.(table_data)) /\
+  tabsize_agree t.
+
+Definition mem_agree (m : memory) : Prop :=
+  match (mem_max_opt m) with
+  | None => True
+  | Some n => N.le (mem_size m) n
+  end.
+
+Definition store_typing (s : store_record) : Prop :=
+  match s with
+  | Build_store_record fs tclss mss gs =>
+    List.Forall (cl_type_check_single s) fs /\
+    List.Forall (tab_agree s) tclss /\
+    List.Forall mem_agree mss
+  end.
+
+Inductive config_typing : store_record -> frame -> seq administrative_instruction -> seq value_type -> Prop :=
+| mk_config_typing :
+  forall s f es ts,
+  store_typing s ->
+  s_typing s None f es ts ->
+  config_typing s f es ts.
+
 
 End Host.
 

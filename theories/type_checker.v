@@ -18,7 +18,7 @@ Variable memory_repr : memoryType.
 
 Let store_record := store_record host_function.
 Let function_closure := function_closure host_function.
-Let administrative_instruction := administrative_instruction host_function.
+(*Let administrative_instruction := administrative_instruction host_function.*)
 
 
 Inductive checker_type_aux : Type :=
@@ -48,14 +48,6 @@ Definition eqchecker_typeP : Equality.axiom checker_type_eqb :=
 
 Canonical Structure checker_type_eqMixin := EqMixin eqchecker_typeP.
 Canonical Structure checker_type_eqType := Eval hnf in EqType checker_type checker_type_eqMixin.
-
-
-Definition result_types_agree (ts : result_type) r :=
-  match r with
-  | result_values vs => all2 types_agree ts vs
-  | result_trap => true
-  end.
-
 
 Definition to_ct_list (ts : seq value_type) : seq checker_type_aux :=
   map CTA_some ts.
@@ -396,99 +388,6 @@ Definition check (C : t_context) (es : list basic_instruction) (ts : checker_typ
 Definition b_e_type_checker (C : t_context) (es : list basic_instruction) (tf : function_type) : bool :=
   let: (Tf tn tm) := tf in
   c_types_agree (List.fold_left (check_single C) es (CT_type tn)) tm  .
-
-(* TODO: This definition is kind of a duplication of inst_typing, to avoid more dependent definitions becoming Prop downstream *)
-
-(* UPD: This in fact makes the soundness proof extremely tedious and dependent on the type_checker reflecting typing.
-  I have edited the later functions to avoid using these. *)
-(*
-Definition inst_type_check (s : store_record) (i : instance) : t_context := {|
-  (* TODO: ported this from option to list, but not too sure it's right *)
-  tc_types_t := i_types i;
-  tc_func_t := collect_at_inds (map cl_type (s_funcs s)) (i_funcs i);
-  tc_global :=
-    collect_at_inds
-      (map (fun glob => {| tg_mut := glob.(g_mut); tg_t := typeof glob.(g_val) |}) s.(s_globals))
-      i.(i_globs);
-  tc_table :=
-    collect_at_inds
-      (map
-        (fun t =>
-          (* TODO: this is probably wrong? *)
-          {| tt_limits := {| lim_min := 0; lim_max := Some (List.length t.(table_data)) |}; tt_elem_type := ELT_funcref |})
-          s.(s_tables))
-      i.(i_tab);
-  tc_memory :=
-    collect_at_inds
-      (map
-        (fun m =>
-          (* TODO: this is probably wrong? *)
-          {| lim_min := 0; lim_max := Some (List.length m.(mem_data)) |})
-        s.(s_mems))
-      i.(i_memory);
-  tc_local := nil;
-  tc_label := nil;
-  tc_return := None;
-|}.
-
-Definition cl_type_check (s : store_record) (cl : function_closure) : bool :=
-  match cl with
-  | Func_native i tf ts es =>
-    let '(Tf t1s t2s) := tf in
-    let C := inst_type_check s i in
-    let C' := upd_local_label_return C (app (tc_local C) (app t1s ts)) (app [::t2s] (tc_label  C)) (Some t2s) in
-    b_e_type_checker C' es (Tf [::] t2s)
-  | Func_host tf h => true
-  end.
-*)
-(*
-  e_typing is the extension of typing to administrative instructions. See appendix 5 for
-    some of them.
-*)
-
-Definition cl_type_check_single (s : store_record memory_repr) (f : function_closure) :=
-  exists tf, cl_typing s f tf.
-
-Definition tabcl_agree (s : store_record memory_repr) (tcl_index : option nat) : Prop :=
-  match tcl_index with
-  | None => True
-  | Some n => let tcl := List.nth_error (s_funcs s) n in
-    match tcl with
-    | None => True
-    | Some cl => cl_type_check_single s cl
-    end
-  end.
-
-Definition tabsize_agree (t : tableinst) : Prop :=
-  match table_max_opt t with
-  | None => True
-  | Some n => tab_size t <= n
-  end.
-
-Definition tab_agree (s : store_record memory_repr) (t : tableinst): Prop :=
-  List.Forall (tabcl_agree s) (t.(table_data)) /\
-  tabsize_agree t.
-
-Definition mem_agree (m : memory memory_repr) : Prop :=
-  match (mem_max_opt m) with
-  | None => True
-  | Some n => mem_size m <= n
-  end.
-
-Definition store_typing (s : store_record memory_repr) : Prop :=
-  match s with
-  | Build_store_record fs tclss mss gs =>
-    List.Forall (cl_type_check_single s) fs /\
-    List.Forall (tab_agree s) tclss /\
-    List.Forall mem_agree mss
-  end.
-
-Inductive config_typing : store_record memory_repr -> frame -> seq administrative_instruction -> seq value_type -> Prop :=
-| mk_config_typing :
-  forall s f es ts,
-  store_typing s ->
-  s_typing s None f es ts ->
-  config_typing s f es ts.
 
 End Host.
 

@@ -19,8 +19,6 @@ Variable memory_repr : memoryType.
 
 Let store_record := store_record host_function memory_repr.
 Let function_closure := function_closure host_function.
-Let administrative_instruction := administrative_instruction host_function.
-Let lholed := lholed host_function.
 
 (** read `len` bytes from `m` starting at `start_idx` *)
 Definition read_bytes (m : Memory.sort memory_repr) (start_idx : N) (len : nat) : option bytes :=
@@ -74,7 +72,7 @@ Definition mem_grow (m : memory memory_repr) (len_delta : N) : option (memory me
   let new_mem_data := Memory.mem_grow (Memory.mixin (Memory.class memory_repr)) len_delta m.(mem_data) in
   match m.(mem_max_opt) with
   | Some maxlim =>
-    if N.leb new_length maxlim then
+    if N.leb new_size maxlim then
       Some {|
         mem_data := new_mem_data;
         mem_max_opt := m.(mem_max_opt);
@@ -408,6 +406,13 @@ Definition stab_index (s: store_record) (i j: nat) : option nat :=
       (fun stab_i => List.nth_error (table_data stab_i) j)
   stabinst).
 
+Definition stab_addr (s: store_record) (f: frame) (c: nat) : option nat :=
+  match f.(f_inst).(inst_tab) with
+  | nil => None
+  | ta :: _ => stab_index s ta c
+  end.
+
+
 Definition stab_s (s : store_record) (i j : nat) : option function_closure :=
   let n := stab_index s i j in
   option_bind
@@ -469,8 +474,8 @@ Definition tab_extension (t1 t2 : tableinst) :=
   (tab_size t1 <= tab_size t2) &&
   (t1.(table_max_opt) == t2.(table_max_opt)).
 
-Definition mem_extension (m1 m2 : memory memory_repr) :=
-  (mem_size m1 <= mem_size m2) && (mem_max_opt m1 == mem_max_opt m2).
+Definition mem_extension (m1 m2 : memory) :=
+  (N.leb (mem_size m1) (mem_size m2)) && (mem_max_opt m1 == mem_max_opt m2).
 
 Definition store_extension (s s' : store_record) : bool :=
   (s_funcs s == s_funcs s') &&
@@ -648,6 +653,12 @@ Fixpoint lfill_exact (k : nat) (lh : lholed) (es : seq administrative_instructio
 Definition lfilled_exact (k : nat) (lh : lholed) (es : seq administrative_instruction) (es' : seq administrative_instruction) : bool :=
   if lfill_exact k lh es is Some es'' then es' == es'' else false.
 
+Definition result_types_agree (ts : result_type) r :=
+  match r with
+  | result_values vs => all2 types_agree ts vs
+  | result_trap => true
+  end.
+
 Definition load_store_t_bounds (a : alignment_exponent) (tp : option packed_type) (t : value_type) : bool :=
   match tp with
   | None => Nat.pow 2 a <= t_length t
@@ -764,7 +775,7 @@ Definition n_zeros (ts : seq value_type) : seq value :=
 End Host.
 
 Arguments cl_type {host_function}.
-Arguments to_e_list [host_function].
+(*Arguments to_e_list [host_function].
 Arguments v_to_e_list [host_function].
-Arguments result_to_stack [host_function].
+Arguments result_to_stack [host_function].*)
 

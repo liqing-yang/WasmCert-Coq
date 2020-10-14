@@ -3,7 +3,7 @@
     and https://webassembly.github.io/spec/core/exec/index.html **)
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
 
-(* TODO: use better representations that "nat", which is expensive;
+(* TODO: use better representations than "nat", which is expensive;
    maybe N? maybe a 32-bit word type? *)
 
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
@@ -47,13 +47,30 @@ Definition serialise_f32 (f : f32) : bytes :=
 Definition serialise_f64 (f : f64) : bytes :=
   common.Memdata.encode_int 8%nat (Integers.Int64.unsigned (numerics.Wasm_float.FloatSize64.to_bits f)).
 
+(** std-doc:
+Limits classify the size range of resizeable storage associated with memory types and table types.
+If no maximum is given, the respective storage can grow to any size.
+[https://webassembly.github.io/spec/core/syntax/types.html#limits]
+  *)
 Record limits : Type := {
   lim_min : N; (* TODO: should be u32 *)
   lim_max : option N; (* TODO: should be u32 *)
 }.
 
+(** std-doc:
+Memory types classify linear memories and their size range.
+The limits constrain the minimum and optionally the maximum size of a memory. The limits are given in units of page size.
+[https://webassembly.github.io/spec/core/syntax/types.html#memory-types]
+*)
 Definition memory_type := limits.
 
+(** std-doc:
+Value types classify the individual values that WebAssembly code can compute with and the values that a variable accepts.
+The types i32 and i64 classify 32 and 64 bit integers, respectively. Integers are not inherently signed or unsigned, their interpretation is determined by individual operations.
+
+The types f32 and f64 classify 32 and 64 bit floating-point data, respectively. They correspond to the respective binary floating-point representations, also known as single and double precision, as defined by the IEEE 754-2019 standard (Section 3.3).
+[https://webassembly.github.io/spec/core/syntax/types.html#value-types]
+*)
 Inductive value_type : Type := (* t *)
   | T_i32
   | T_i64
@@ -69,11 +86,18 @@ Inductive packed_type : Type := (* tp *)
   .
 
 (* TODO: the standard calls those const and var *)
+(** std-doc:
+[https://webassembly.github.io/spec/core/syntax/types.html#global-types]
+*)
 Inductive mutability : Type := (* mut *)
   | MUT_immut
   | MUT_mut
   .
 
+(** std-doc:
+Global types classify global variables, which hold a value and can either be mutable or immutable.
+[https://webassembly.github.io/spec/core/syntax/types.html#global-types]
+*)
 Record global_type : Type := (* tg *) {
   tg_mut : mutability;
   tg_t : value_type
@@ -81,6 +105,7 @@ Record global_type : Type := (* tg *) {
 
 (** std-doc:
 Result types classify the result of executing instructions or functions, which is a sequence of values written with brackets.
+[https://webassembly.github.io/spec/core/syntax/types.html#result-types]
 *)
 Definition result_type : Type :=
   list value_type.
@@ -94,6 +119,7 @@ Definition result_type : Type :=
 Function types classify the signature of functions, mapping a vector of
 parameters to a vector of results. They are also used to classify the inputs
 and outputs of instructions.
+[https://webassembly.github.io/spec/core/syntax/types.html#function-types]
 *)
 Inductive function_type := (* tf *)
   | Tf : result_type -> result_type -> function_type
@@ -114,6 +140,7 @@ Table types classify tables over elements of element types within a size range.
 
 Like memories, tables are constrained by limits for their minimum and
 optionally maximum size. The limits are given in numbers of entries.
+[https://webassembly.github.io/spec/core/syntax/types.html#table-types]
 *)
 Record table_type : Type := {
   tt_limits : limits;
@@ -157,19 +184,6 @@ Record t_context : Type := {
   tc_label : list (list value_type);
   tc_return : option (list value_type);
 }.
-
-(* FIXME: What it is? Should we remove it?
-
-Record s_context := {
-  sc_inst : list t_context;
-  sc_funcs : list function_type;
-  sc_tab : list nat;
-  sc_memory : list nat;
-  sc_globs : list global_type;
-}.
-
-*)
-
 
 (** std-doc:
 WebAssembly computations manipulate values of the four basic value types:
@@ -346,7 +360,6 @@ Record instance : Type := (* inst *) {
   inst_globs : list globaladdr;
   (* TODO: exports field? *)
 }.
-
 (** std-doc:
 A function instance is the runtime representation of a function. It effectively
 is a closure of the original function over the runtime module instance of its
@@ -356,7 +369,7 @@ definitions during execution of the function.
 Inductive function_closure : Type := (* cl *)
   | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
   | FC_func_host : function_type -> host_function -> function_closure
-  .
+.
 
 (** std-doc:
 Each function element is either empty, representing an uninitialized table
@@ -378,11 +391,18 @@ Record tableinst : Type := {
   table_max_opt: option N; (* TODO: should be u32 *)
 }.
 
+(** std-doc:
+https://webassembly.github.io/spec/core/syntax/types.html#global-types
+*)
 Record global : Type := {
   g_mut : mutability;
   g_val : value;
 }.
 
+(** std-doc:
+
+[https://webassembly.github.io/spec/core/exec/runtime.html#syntax-frame]
+*)
 Record frame : Type := (* f *) {
   f_locs: list value;
   f_inst: instance
@@ -391,6 +411,13 @@ Record frame : Type := (* f *) {
 (** * Administrative Instructions **)
 
 (** std-doc:
+WebAssembly code consists of sequences of instructions. Its computational model is based on a stack machine in that instructions manipulate values on an implicit operand stack, consuming (popping) argument values and producing or returning (pushing) result values.
+
+In addition to dynamic operands from the stack, some instructions also have static immediate arguments, typically indices or type annotations, which are part of the instruction itself.
+
+Some instructions are structured in that they bracket nested sequences of instructions.
+[https://webassembly.github.io/spec/core/syntax/instructions.html]
+
 In order to express the reduction of traps, calls, and control instructions,
 the syntax of instructions is extended to include the following administrative
 instructions:
@@ -398,7 +425,7 @@ instructions:
 Inductive administrative_instruction : Type := (* e *)
 | AI_basic : basic_instruction -> administrative_instruction
 | AI_trap
-| AI_invoke : function_closure -> administrative_instruction
+| AI_invoke : funcaddr -> administrative_instruction
 | AI_label : nat -> seq administrative_instruction -> seq administrative_instruction -> administrative_instruction
 | AI_local : nat -> frame -> seq administrative_instruction -> administrative_instruction
 .
@@ -408,6 +435,11 @@ Inductive lholed : Type :=
 | LH_rec : list administrative_instruction -> nat -> list administrative_instruction -> lholed -> list administrative_instruction -> lholed
 .
 
+(** std-doc:
+Function bodies, initialization values for globals, and offsets of element or data segments are given as expressions, which are sequences of instructions terminated by an 𝖾𝗇𝖽 marker.
+In some places, validation restricts expressions to be constant, which limits the set of allowable instructions.
+[https://webassembly.github.io/spec/core/syntax/instructions.html#expressions]
+*)
 Definition expr := list basic_instruction.
 
 Inductive labelidx : Type :=
@@ -492,6 +524,10 @@ Record module_func : Type := {
   modfunc_body : expr;
 }.
 
+(** std-doc:
+WebAssembly programs are organized into modules, which are the unit of deployment, loading, and compilation. A module collects definitions for types, functions, tables, memories, and globals. In addition, it can declare imports and exports and provide initialization logic in the form of data and element segments or a start function.
+[https://webassembly.github.io/spec/core/syntax/modules.html]
+*)
 Record module : Type := {
   mod_types : list function_type;
   mod_funcs : list module_func;
@@ -554,12 +590,5 @@ Definition res_tuple : Type :=
   store_record * frame * res_step.
 
 End Host.
-
 Arguments FC_func_native [host_function].
-Arguments AI_basic {host_function}.
-Arguments AI_trap {host_function}.
-
-Arguments RS_crash [host_function].
-Arguments RS_break [host_function].
-Arguments RS_return [host_function].
 
