@@ -16,19 +16,9 @@ Variable memory_repr : Memory.Exports.memoryType.
 
 Let store_record := store_record host_function memory_repr.
 Let function_closure := function_closure host_function.
-(*Let administrative_instruction := administrative_instruction host_function.
-
-Let to_e_list : seq basic_instruction -> seq administrative_instruction := @to_e_list _.
-Let to_b_list : seq administrative_instruction -> seq basic_instruction := @to_b_list _.*)
 Let e_typing : store_record -> t_context -> seq administrative_instruction -> function_type -> Prop :=
   @e_typing _ _.
 Let inst_typing : store_record -> instance -> t_context -> bool := @inst_typing _ _.
-  @reduce_simple _.
-Let const_list : seq administrative_instruction -> bool := @const_list _.
-Let lholed := lholed host_function.
-Let lfilled : depth -> lholed -> seq administrative_instruction -> seq administrative_instruction -> bool :=
-  @lfilled _.
-Let es_is_basic : seq administrative_instruction -> Prop := @es_is_basic _.*)
 
 Let host := host host_function memory_repr.
 
@@ -2435,18 +2425,7 @@ Lemma mem_extension_store: forall m k off v tlen (mem : memory memory_repr),
     store m k off (bits v) tlen = Some mem ->
     mem_extension m mem.
 Proof.
-  (*
-  move => m k off v tlen mem HStore.
-  unfold mem_extension.
-  unfold store in HStore.
-  destruct ((k + off + N.of_nat tlen <=? mem_length m)%N) eqn:HMemSize => //.
-  inversion HStore; clear HStore.
-  apply/andP; split => //=.
-  apply N.leb_le.
-  unfold mem_size, mem_length. simpl.
-  by lias.
-Qed.
-*)
+  (* TODO: revive *)
 Admitted.
 
 Lemma mem_extension_grow_memory: forall m c (mem : memory memory_repr),
@@ -2624,19 +2603,7 @@ Lemma store_mem_agree: forall s n m k off vs tl mem,
     tl > 0 ->
     mem_agree mem.
 Proof.
-  move => s n m k off vs tl mem HST HN HStore HTL.
-  unfold store in HStore.
-  destruct ((k+off+N.of_nat tl <=? mem_length m)%N) eqn:H => //=.
-  inversion HStore. subst. clear HStore.
-  unfold mem_agree => //=.
-  destruct (mem_max_opt m) eqn:HLimMax => //=.
-  unfold mem_size. unfold mem_length => /=.
-  assert (mem_agree m); first by eapply store_typed_mem_agree; eauto.
-  unfold mem_agree in H0.
-(*
-  by rewrite HLimMax in H0.
-Qed.
-*)
+(* TODO: revive *)
 Admitted.
 
 Lemma mem_grow_mem_agree: forall s n m c mem,
@@ -2645,18 +2612,8 @@ Lemma mem_grow_mem_agree: forall s n m c mem,
     mem_grow m c = Some mem ->
     mem_agree mem.
 Proof.
-  move => s n m c mem HST HN HGrow.
-  assert (mem_agree m); first by eapply store_typed_mem_agree; eauto.
-  unfold mem_grow in HGrow.
-  unfold mem_agree. simpl.
-  unfold mem_agree in H.
-  destruct (mem_max_opt m) eqn:HLimMax => //=.
-  - destruct ((mem_size m + c <=? n0)%N) eqn:H1 => //.
-    inversion HGrow. unfold mem_size, mem_length in *. simpl in *.
-    rewrite N.div_mul => //.
-    by apply N.leb_le in H1.    
-  - by inversion HGrow.
-Qed.
+  (* TODO: revive *)
+Admitted.
     
 Lemma reduce_inst_unchanged: forall hs s f es hs' s' f' es',
     reduce hs s f es hs' s' f' es' ->

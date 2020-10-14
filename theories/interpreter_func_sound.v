@@ -23,17 +23,11 @@ Variable memory_repr : Memory.Exports.memoryType.
 
 Let store_record := store_record host_function memory_repr.
 Let function_closure := function_closure host_function.
-(*Let administrative_instruction := administrative_instruction host_function.
-
-Let to_e_list : seq basic_instruction -> seq administrative_instruction := @to_e_list _.
-Let to_b_list : seq administrative_instruction -> seq basic_instruction := @to_b_list _.*)
 Let e_typing : store_record -> t_context -> seq administrative_instruction -> function_type -> Prop :=
   @e_typing _ memory_repr.
 Let inst_typing : store_record -> instance -> t_context -> bool := @inst_typing _ memory_repr.
 
 Let host := host host_function memory_repr.
-
-(*Let run_one_step_fuel := @run_one_step_fuel host_function.*)
 
 Let RS_crash := interpreter_func.RS_crash.
 Let RS_break := interpreter_func.RS_break.
@@ -525,34 +519,12 @@ Proof.
         -- rewrite HSplitVals. apply Coqlib.in_app. right. by left.
 Qed.
 
-Lemma run_one_step_fuel_increase : forall d tt e hs (s : store_record) f (r : interpreter_func.res_step host_function) fuel fuel',
+Lemma run_one_step_fuel_increase : forall d tt e hs (s : store_record) f (r : interpreter_func.res_step) fuel fuel',
   fuel <= fuel' ->
   run_one_step fuel d tt e = (hs, s, f, r) ->
   r = RS_crash C_exhaustion \/ run_one_step fuel' d tt e = (hs, s, f, r).
 Proof.
-  (* TODO: this was broken by adding the memory_repr parameter; why?
-  
-  move=> + + e. induction e using administrative_instruction_ind';
-    move=> d [[[tt_hs tt_s] tt_f] tt_es] hs' s' f' r;
-    (case; first by move=> ? ?; pattern_match; left) => fuel;
-    (case; first by []) => fuel' I /=.
-  - by destruct b; explode_and_simplify; try pattern_match; right.
-  - pattern_match. by right.
-  - by destruct f; explode_and_simplify; try pattern_match; right.
-  - explode_and_simplify; try by pattern_match; right.
-    destruct run_step_with_fuel as [[[hs'' s''] vs''] r''] eqn: E.
-    eapply run_step_fuel_increase_aux in E; [|by apply I|..] => //. destruct E as [E|E].
-    + subst. pattern_match. by left.
-    + unfold run_step_with_fuel in E. unfold interpreter_func.run_step_with_fuel in E.
-      rewrite E. by right.
-  - explode_and_simplify; try by pattern_match; right.
-    destruct run_step_with_fuel as [[[hs'' s''] vs''] r''] eqn: E.
-    eapply run_step_fuel_increase_aux in E; [|by apply I|..] => //. destruct E as [E|E].
-    + subst. pattern_match. by left.
-    + unfold run_step_with_fuel in E. unfold interpreter_func.run_step_with_fuel in E.
-      rewrite E. by right.
-Qed.
-*)
+  (* TODO: revive *)
 Admitted.
 
 Lemma run_step_fuel_increase : forall d tt hs s f r fuel fuel',
@@ -626,62 +598,7 @@ Lemma run_one_step_fuel_enough : forall d tt e hs s f r,
   run_one_step (run_one_step_fuel e) d tt e = (hs, s, f, r) ->
   r <> RS_crash C_exhaustion.
 Proof.
-  (*
-  move=> + + e. induction e using administrative_instruction_ind';
-    move=> d [[[tt_hs tt_s] tt_f] tt_es] hs' s' f' r //.
-  - simpl. by destruct b; explode_and_simplify; pattern_match.
-  - by pattern_match.
-  - simpl. explode_and_simplify; try pattern_match => //.
-    destruct host_application_impl; explode_and_simplify; by pattern_match.
-  - rename l0 into es2.
-    set fu := (run_one_step_fuel (AI_label n l es2)) .-1.
-    simpl in fu.
- (*   match goal with |- context [ run_step_with_fuel ?fuel _ _ _ ] => set f := fuel end.*)
-    assert ((run_step_fuel (tt_hs, tt_s, tt_f, es2)) <= fu).
-    {
-      rewrite/fu /=.
-      move: (max_fold_left_run_step_fuel es2). clear.
-      unfold run_one_step_fuel.
-      (* lias needs some help to establish the inequality here. *)
-      match goal with |- context [?a <= ?b] => set x := a; set y := b end.
-      by lias.
-    }
-    simpl.
-    explode_and_simplify; try by pattern_match.
-    destruct (run_step d (tt_hs, tt_s, tt_f, es2)) as [[[hs'' s''] f''] r''] eqn:E1.
-    move: (E1) => E2. unfold run_step, interpreter_func.run_step in E2.
-    apply run_step_fuel_increase with (fuel' := fu) in E2.
-    move: (E1) => D. apply run_step_fuel_enough_aux in D => //.
-    + destruct E2 as [E2|E2] => //.
-      unfold run_step_with_fuel in E2. unfold interpreter_func.run_step_with_fuel in E2.
-      rewrite E2.
-      by destruct r'' as [|[|]| |] => //; explode_and_simplify; pattern_match.
-    + by [].
-  - (* LATER: This proof might be factorised somehow. *)
-    rename l into es. (* rename l0 into es.*)
-    set fu := (run_one_step_fuel (AI_local n f es)) .-1.
-    simpl in fu.
-    (* match goal with |- context [ run_step_with_fuel ?fuel _ _ _ ] => set f := fuel end.*)
-    assert (run_step_fuel (tt_hs, tt_s, f, es) <= fu).
-    {
-      apply/leP. rewrite/fu /=.
-      move: (max_fold_left_run_step_fuel es). clear.
-      unfold run_one_step_fuel.
-      (* Same as above, lias needs some help to establish the inequality here too. *)
-      match goal with |- context [?a <= ?b] => set x := a; set y := b end.
-      by lias.
-    }
-    simpl.
-    explode_and_simplify; try by pattern_match.
-    destruct (run_step d (tt_hs, tt_s, f, es)) as [[[hs'' s''] f''] r''] eqn:E1.
-    move: (E1) => D. apply run_step_fuel_enough_aux in D => //.
-    move: (E1) => E2. apply run_step_fuel_increase with (fuel' := fu) in E2.
-    + destruct E2 as [E2|E2] => //.
-      unfold run_step_with_fuel in E2. unfold interpreter_func.run_step_with_fuel in E2.
-      rewrite E2.
-      by destruct r'' as [|[|]| |] => //; explode_and_simplify; pattern_match.
-    + by [].
-    *)
+  (* TODO: revive *)
 Admitted.
       
 (** [run_step_fuel] is indeed enough fuel to run [run_step]. **)

@@ -305,7 +305,7 @@ Definition global_agree (g : global) (tg : global_type) : bool :=
 Definition globals_agree (gs : seq global) (n : nat) (tg : global_type) : bool :=
   (n < length gs) && (option_map (fun g => global_agree g tg) (List.nth_error gs n) == Some true).
 
-Definition mem_typing (m : memory) (m_t : memory_type) : bool :=
+Definition mem_typing (m : memory memory_repr) (m_t : memory_type) : bool :=
   (N.leb m_t.(lim_min) (mem_size m)) &&
   (m.(mem_max_opt) == m_t.(lim_max)) (* TODO: mismatch *).
 
@@ -579,7 +579,7 @@ Definition tab_agree (s: store_record) (t: tableinst): Prop :=
   List.Forall (tabcl_agree s) (t.(table_data)) /\
   tabsize_agree t.
 
-Definition mem_agree (m : memory) : Prop :=
+Definition mem_agree (m : memory memory_repr) : Prop :=
   match (mem_max_opt m) with
   | None => True
   | Some n => N.le (mem_size m) n
@@ -601,5 +601,5 @@ Inductive config_typing : store_record -> frame -> seq administrative_instructio
   config_typing s f es ts.
 
 
-End Host.
-
+  
+  End Host.

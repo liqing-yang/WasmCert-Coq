@@ -175,19 +175,19 @@ Inductive reduce : host_state -> store_record -> frame -> list administrative_in
         reduce hs s f [::AI_basic (BI_call i)] hs s f [::AI_invoke a]
   | r_call_indirect_success :
       forall s f i a cl c hs,
-        stab_addr s f (Wasm_int.nat_of_uint i32m c) = Some a ->
+        stab_addr s f (numerics.Wasm_int.nat_of_uint numerics.i32m c) = Some a ->
         List.nth_error s.(s_funcs) a = Some cl ->
         stypes s f.(f_inst) i = Some (cl_type cl) ->
         reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_invoke a]
   | r_call_indirect_failure1 :
       forall s f i a cl c hs,
-        stab_addr s f (Wasm_int.nat_of_uint i32m c) = Some a ->
+        stab_addr s f (numerics.Wasm_int.nat_of_uint numerics.i32m c) = Some a ->
         List.nth_error s.(s_funcs) a = Some cl ->
         stypes s f.(f_inst) i <> Some (cl_type cl) ->
         reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_trap]
   | r_call_indirect_failure2 :
       forall s f i c hs,
-        stab_addr s f (Wasm_int.nat_of_uint i32m c) = None ->
+        stab_addr s f (numerics.Wasm_int.nat_of_uint numerics.i32m c) = None ->
         reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_trap]
   | r_invoke_native :
       forall a cl t1s t2s ts es ves vcs n m k zs s f f' i hs,

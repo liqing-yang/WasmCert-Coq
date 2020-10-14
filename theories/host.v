@@ -3,7 +3,7 @@
 
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From ITree Require Import ITree ITreeFacts.
-Require Import common datatypes operations type_checker memory.
+Require Import common datatypes operations type_checker memory typing.
 Require Import memory_array.
 
 Import Monads.

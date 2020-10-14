@@ -72,7 +72,7 @@ Definition mem_grow (m : memory memory_repr) (len_delta : N) : option (memory me
   let new_mem_data := Memory.mem_grow (Memory.mixin (Memory.class memory_repr)) len_delta m.(mem_data) in
   match m.(mem_max_opt) with
   | Some maxlim =>
-    if N.leb new_size maxlim then
+    if N.leb new_length maxlim then
       Some {|
         mem_data := new_mem_data;
         mem_max_opt := m.(mem_max_opt);
@@ -474,7 +474,7 @@ Definition tab_extension (t1 t2 : tableinst) :=
   (tab_size t1 <= tab_size t2) &&
   (t1.(table_max_opt) == t2.(table_max_opt)).
 
-Definition mem_extension (m1 m2 : memory) :=
+Definition mem_extension (m1 m2 : memory memory_repr) :=
   (N.leb (mem_size m1) (mem_size m2)) && (mem_max_opt m1 == mem_max_opt m2).
 
 Definition store_extension (s s' : store_record) : bool :=

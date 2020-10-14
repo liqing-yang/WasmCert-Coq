@@ -251,7 +251,7 @@ Definition run_one_step (call : run_stepE ~> itree (run_stepE +' eff))
 
   | AI_basic (BI_call_indirect j) =>
     if ves is VAL_int32 c :: ves' then
-      match stab_addr s f (Wasm_int.nat_of_uint i32m c) with
+      match stab_addr s f (numerics.Wasm_int.nat_of_uint numerics.i32m c) with
       | Some a =>
         match List.nth_error s.(s_funcs) a with
         | Some cl =>

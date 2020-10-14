@@ -87,71 +87,6 @@ Definition config_tuple := ((host_state * store_record * frame * list administra
 Definition config_one_tuple_without_e := (host_state * store_record * frame * list value)%type.
 
 Definition res_tuple := (host_state * store_record * frame * res_step)%type.
-(*
-Fixpoint split_vals (es : list basic_instruction) : ((list value) * (list basic_instruction))%type :=
-  match es with
-  | (EConst v) :: es' =>
-    let: (vs', es'') := split_vals es' in
-    (v :: vs', es'')
-  | _ => ([::], es)
-  end.
-
-(** [split_vals_e es]: takes the maximum initial segment of [es] whose elements
-    are all of the form [AI_basic (EConst v)];
-    returns a pair of lists [(ves, es')] where [ves] are those [v]'s in that initial
-    segment and [es] is the remainder of the original [es]. **)
-Fixpoint split_vals_e (es : list administrative_instruction) : ((list value) * (list administrative_instruction))%type :=
-  match es with
-  | (AI_basic (EConst v)) :: es' =>
-    let: (vs', es'') := split_vals_e es' in
-    (v :: vs', es'')
-  | _ => ([::], es)
-  end.
-
-Fixpoint split_n (es : list value) (n : nat) : ((list value) * (list value))%type :=
-  match (es, n) with
-  | ([::], _) => ([::], [::])
-  | (_, 0) => ([::], es)
-  | (e :: esX, n.+1) =>
-    let: (es', es'') := split_n esX n in
-    (e :: es', es'')
-  end.
-
-Definition expect {A B : Type} (ao : option A) (f : A -> B) (b : B) : B :=
-  match ao with
-  | Some a => f a
-  | None => b
-  end.
-
-Definition vs_to_es (vs : list value) : list administrative_instruction :=
-  v_to_e_list (rev vs).
-
-Definition e_is_trap (e : administrative_instruction) : bool :=
-  match e with
-  | AI_trap => true
-  | _ => false
-  end.
-
-Lemma e_is_trapP : forall e, reflect (e = AI_trap) (e_is_trap e).
-Proof.
-  case => //= >; by [ apply: ReflectF | apply: ReflectT ].
-Qed.
-
-(** [es_is_trap es] is equivalent to [es == [:: AI_trap]]. **)
-Definition es_is_trap (es : list administrative_instruction) : bool :=
-  match es with
-  | [::e] => e_is_trap e
-  | _ => false
-  end.
-
-Lemma es_is_trapP : forall l, reflect (l = [::AI_trap]) (es_is_trap l).
-Proof.
-  case; first by apply: ReflectF.
-  move=> // a l. case l => //=.
-  - apply: (iffP (e_is_trapP _)); first by elim.
-    by inversion 1.
-  - move=> >. by apply: ReflectF.
-Qed.*)
 
 Fixpoint run_step_with_fuel (fuel : fuel) (d : depth) (cfg : config_tuple) : res_tuple :=
   let: (hs, s, f, es) := cfg in
@@ -281,14 +216,7 @@ with run_one_step (fuel : fuel) (d : depth) (cfg : config_one_tuple_without_e) (
       else (hs, s, f, crash_error)
     | AI_basic (BI_call_indirect j) =>
       if ves is VAL_int32 c :: ves' then
-<<<<<<< HEAD
-        match stab s f.(f_inst) (numerics.Wasm_int.nat_of_uint numerics.i32m c) with
-        | Some cl =>
-          if stypes s f.(f_inst) j == Some (cl_type cl)
-          then (hs, s, f, RS_normal (vs_to_es ves' ++ [::AI_invoke cl]))
-          else (hs, s, f, RS_normal (vs_to_es ves' ++ [::AI_trap]))
-=======
-        match stab_addr s f (Wasm_int.nat_of_uint i32m c) with
+        match stab_addr s f (numerics.Wasm_int.nat_of_uint numerics.i32m c) with
         | Some a =>
           match List.nth_error s.(s_funcs) a with
           | Some cl =>
@@ -297,7 +225,6 @@ with run_one_step (fuel : fuel) (d : depth) (cfg : config_one_tuple_without_e) (
             else (hs, s, f, RS_normal (vs_to_es ves' ++ [::AI_trap]))        
           | None => (hs, s, f, crash_error)
           end
->>>>>>> master
         | None => (hs, s, f, RS_normal (vs_to_es ves' ++ [::AI_trap]))
         end
       else (hs, s, f, crash_error)

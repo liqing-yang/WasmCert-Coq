@@ -17,17 +17,6 @@ Section Host.
 
 Variable host_function : eqType.
 
-(*Let administrative_instruction := administrative_instruction host_function.
-Let const_list : seq administrative_instruction -> bool := @const_list _.
-Let v_to_e_list : seq value -> seq administrative_instruction := @v_to_e_list _.
-Let lfilled := @lfilled host_function.
-Let lfilledInd := @lfilledInd host_function.
-Let es_is_basic := @es_is_basic host_function.
-Let to_e_list := @to_e_list host_function.
-Let e_is_trap := @e_is_trap host_function.
-Let es_is_trap := @es_is_trap host_function.*)
-
-
 Lemma const_list_concat: forall vs1 vs2,
     const_list vs1 ->
     const_list vs2 ->
@@ -871,6 +860,8 @@ Proof.
   - by destruct es.
   - f_equal. by eapply IHHType.
 Qed.
+
+Require Import Coq.Program.Equality.
 
 (* A convenient lemma to invert e_typing back to be_typing. *)
 Lemma et_to_bet: forall s C es ts,

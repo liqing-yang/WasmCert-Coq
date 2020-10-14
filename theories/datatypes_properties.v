@@ -222,11 +222,9 @@ Variable host_function : eqType.
 Variable memory_repr : memoryType.
 
 Let function_closure := @function_closure host_function.
-Let lholed := lholed host_function.
-Let res_step := res_step host_function.*)
 
 Let administrative_instruction_rect :=
-  @administrative_instruction_rect (*host_function*)
+  @administrative_instruction_rect
   : forall (P : administrative_instruction -> Type), _.
 
 Definition function_closure_eq_dec : forall (cl1 cl2 : function_closure),
