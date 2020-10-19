@@ -64,15 +64,15 @@ Definition mem_length (m : memory memory_repr) : N :=
 Definition mem_size (m : memory memory_repr) : N :=
   N.div (mem_length m) page_size.
 
-(** Grow the memory a given number of bytes.
-  * @param len_delta: the number of bytes to grow the memory by
+(** Grow the memory a given number of pages.
+  * @param len_delta: the number of pages to grow the memory by
   *)
 Definition mem_grow (m : memory memory_repr) (len_delta : N) : option (memory memory_repr) :=
-  let new_length := N.add (mem_length m) len_delta in
-  let new_mem_data := Memory.mem_grow (Memory.mixin (Memory.class memory_repr)) len_delta m.(mem_data) in
+  let new_size := N.add (mem_size m) len_delta in
+  let new_mem_data := Memory.mem_grow (Memory.mixin (Memory.class memory_repr)) (N.mul len_delta page_size) m.(mem_data) in
   match m.(mem_max_opt) with
   | Some maxlim =>
-    if N.leb new_length maxlim then
+    if N.leb new_size maxlim then
       Some {|
         mem_data := new_mem_data;
         mem_max_opt := m.(mem_max_opt);
