@@ -8,7 +8,7 @@
 
 Require Import BinNat.
 From Wasm Require array.
-From Wasm Require Import common.
+From Wasm Require Import common memory memory_list.
 From Wasm Require Export numerics bytes.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From compcert Require common.Memdata.
@@ -53,21 +53,8 @@ Record limits : Type := {
   lim_max : option N; (* TODO: should be u32 *)
 }.
 
-Module Byte_Index <: array.Index_Sig.
-Definition Index := N.
-Definition Value := byte.
-Definition index_eqb := N.eqb.
-End Byte_Index.
-
-Module Byte_array := array.Make Byte_Index.
-
-Record data_vec : Type := {
-  dv_length : N;
-  dv_array : Byte_array.array;
-}.
-
 Record memory : Type := {
-  mem_data : data_vec;
+  mem_data : memory_list;
   mem_max_opt: option N; (* TODO: should be u32 *)
 }.
 
