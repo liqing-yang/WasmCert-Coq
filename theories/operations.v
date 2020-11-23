@@ -11,13 +11,6 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Section Host.
-
-Variable host_function : eqType.
-
-Let function_closure := function_closure host_function.
-Let store_record := store_record host_function.
-
 (** read `len` bytes from `m` starting at `start_idx` *)
 Definition read_bytes (m : memory) (start_idx : N) (len : nat) : option bytes :=
   those
@@ -765,10 +758,4 @@ Definition bitzero (t : value_type) : value :=
 
 Definition n_zeros (ts : seq value_type) : seq value :=
   map bitzero ts.
-
-(* TODO: lots of lemmas *)
-
-End Host.
-
-Arguments cl_type {host_function}.
 

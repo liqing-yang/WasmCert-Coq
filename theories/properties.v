@@ -12,21 +12,6 @@ Unset Printing Implicit Defensive.
 
 (** * Basic Lemmas **)
 
-Section Host.
-
-Variable host_function : eqType.
-
-(*Let administrative_instruction := administrative_instruction host_function.
-Let const_list : seq administrative_instruction -> bool := @const_list _.
-Let v_to_e_list : seq value -> seq administrative_instruction := @v_to_e_list _.
-Let lfilled := @lfilled host_function.
-Let lfilledInd := @lfilledInd host_function.
-Let es_is_basic := @es_is_basic host_function.
-Let to_e_list := @to_e_list host_function.
-Let e_is_trap := @e_is_trap host_function.
-Let es_is_trap := @es_is_trap host_function.*)
-
-
 Lemma const_list_concat: forall vs1 vs2,
     const_list vs1 ->
     const_list vs2 ->
@@ -403,9 +388,6 @@ Proof.
   move => X. induction l1 => //=.
 Qed.
 
-End Host.
-
-
 (** * Tactics **)
 
 (** [gen_ind] perform an induction over predicates like [be_typing], generalising its parameters,
@@ -421,7 +403,6 @@ Ltac gen_ind_pre H :=
       let only_do_if_ok_direct t cont :=
         lazymatch t with
         | Type => idtac
-        | host _ => idtac
         | _ => cont tt
         end in
       let t := type of x in
@@ -567,22 +548,6 @@ Ltac fold_upd_context :=
 
 
 (** * More Advanced Lemmas **)
-
-Section Host.
-
-Variable host_function : eqType.
-
-Let store_record := store_record host_function.
-Let function_closure := function_closure host_function.
-(* Let administrative_instruction := administrative_instruction host_function. 
-Let const_list : seq administrative_instruction -> bool := @const_list _.
-Let v_to_e_list : seq value -> seq administrative_instruction := @v_to_e_list _.
-Let lfilled := @lfilled host_function.
-Let lfilledInd := @lfilledInd host_function.
-Let es_is_basic := @es_is_basic host_function.
-Let to_e_list := @to_e_list host_function.*)
-Let e_typing : store_record -> t_context -> seq administrative_instruction -> function_type -> Prop :=
-  @e_typing _.
 
 Lemma lfilled_collapse1: forall n lh vs es LI l,
     lfilledInd n lh (vs++es) LI ->
@@ -745,9 +710,9 @@ Proof.
   }
   case: (list_split_pickable2 (fun vs es => decidable_and (Dcl vs) (Dparse es)) es').
   - move=> [[vs es''] [E1 [C Ex]]].
-    destruct es'' as [| [| | | n es1 LI |] es2];
+    (*destruct es'' as [| [| | | n es1 LI |] es2];
       try solve [ exfalso; move: Ex => [? [? [? [? E']]]]; inversion E' ].
-    clear Ex.
+    clear Ex.*)
     (* apply: IH. *)
     admit. (* TODO: the decreasing argument is not [size es'], but the size plus the sum of all the inner [LI]. *)
   - move=> nE'. right. move=> [n [lh I]]. inversion I; subst.
@@ -1093,6 +1058,4 @@ Proof.
 Qed.
 
 End composition_typing_proofs.
-
-End Host.
 

@@ -22,10 +22,6 @@ Unset Printing Implicit Defensive.
 
 (* TODO: Documentation. *)
 
-(* TODO: make these have structure; this will require monad-ifying the whole thing *)
-Definition host := unit.
-Definition host_state := unit.
-
 Definition depth := nat.
 
 Definition immediate (* i *) :=
@@ -346,10 +342,27 @@ Inductive basic_instruction : Type := (* be *)
 
 (** * Functions and Store **)
 
-Section Host.
 
-(** We assume a family of host functions. **)
-Variable host_function : Type.
+Inductive labelidx : Type :=
+| Mk_labelidx : nat -> labelidx.
+
+Inductive funcidx : Type :=
+| Mk_funcidx : nat -> funcidx.
+
+Inductive tableidx : Type :=
+| Mk_tableidx : nat -> tableidx.
+
+Inductive memidx : Type :=
+| Mk_memidx : nat -> memidx.
+
+Inductive typeidx : Type :=
+| Mk_typeidx : nat -> typeidx.
+
+Inductive localidx : Type :=
+| Mk_localidx : nat -> localidx.
+
+Inductive globalidx : Type :=
+| Mk_globalidx : nat -> globalidx.
 
 Definition funcaddr := immediate (* TODO: should be funcidx *).
 Definition tableaddr := immediate (* TODO: should be tableidx *).
@@ -379,16 +392,6 @@ Record instance : Type := (* inst *) {
   inst_globs : list globaladdr;
   (* TODO: exports field? *)
 }.
-(** std-doc:
-A function instance is the runtime representation of a function. It effectively
-is a closure of the original function over the runtime module instance of its
-originating module. The module instance is used to resolve references to other
-definitions during execution of the function.
-*)
-Inductive function_closure : Type := (* cl *)
-  | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
-  | FC_func_host : function_type -> host_function -> function_closure
-.
 
 (** std-doc:
 Each function element is either empty, representing an uninitialized table
@@ -419,6 +422,17 @@ Record global : Type := {
 }.
 
 (** std-doc:
+A function instance is the runtime representation of a function. It effectively
+is a closure of the original function over the runtime module instance of its
+originating module. The module instance is used to resolve references to other
+definitions during execution of the function.
+*)
+Inductive function_closure : Type := (* cl *)
+  | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
+  | FC_func_host : function_type -> funcidx (* TODO: is that what we want? *) -> function_closure
+.
+
+(** std-doc:
 The store represents all global state that can be manipulated by WebAssembly
 programs. It consists of the runtime representation of all instances of
 functions, tables, memories, and globals that have been allocated during the
@@ -440,32 +454,33 @@ Record frame : Type := (* f *) {
   f_inst: instance
 }.
 
-(** * Administrative Instructions **)
-
-(** std-doc:
-WebAssembly code consists of sequences of instructions. Its computational model is based on a stack machine in that instructions manipulate values on an implicit operand stack, consuming (popping) argument values and producing or returning (pushing) result values.
-
-In addition to dynamic operands from the stack, some instructions also have static immediate arguments, typically indices or type annotations, which are part of the instruction itself.
-
-Some instructions are structured in that they bracket nested sequences of instructions.
-[https://webassembly.github.io/spec/core/syntax/instructions.html]
-
-In order to express the reduction of traps, calls, and control instructions,
-the syntax of instructions is extended to include the following administrative
-instructions:
-*)
-Inductive administrative_instruction : Type := (* e *)
-| AI_basic : basic_instruction -> administrative_instruction
-| AI_trap
-| AI_invoke : funcaddr -> administrative_instruction
-| AI_label : nat -> seq administrative_instruction -> seq administrative_instruction -> administrative_instruction
-| AI_local : nat -> frame -> seq administrative_instruction -> administrative_instruction
+Inductive wot : Type :=
+| WOT_funcref : wot
+| WOT_tableref : wot
+| WOT_memoryref : wot
+| WOT_globalref : wot
 .
 
-Inductive lholed : Type :=
-| LH_base : list administrative_instruction -> list administrative_instruction -> lholed
-| LH_rec : list administrative_instruction -> nat -> list administrative_instruction -> lholed -> list administrative_instruction -> lholed
+Inductive host_type : Type :=
+| HT_byte : host_type
+| HT_wt : host_type
+| HT_wot : host_type
+| HT_moduleref : host_type
+| HT_record : host_type
+| HT_list : host_type
 .
+
+Inductive host_function_type : Type :=
+| HTf : list host_type -> list host_type -> host_function_type.
+
+Inductive wasm_object_value : Type :=
+| WOV_funcref : funcidx -> wasm_object_value
+| WOV_tableref : tableidx -> wasm_object_value
+| WOV_memoryref : memidx -> wasm_object_value
+| WOV_globalref : globalidx -> wasm_object_value
+.
+
+Definition name := list Byte.byte.
 
 (** std-doc:
 Function bodies, initialization values for globals, and offsets of element or data segments are given as expressions, which are sequences of instructions terminated by an 𝖾𝗇𝖽 marker.
@@ -474,34 +489,11 @@ In some places, validation restricts expressions to be constant, which limits th
 *)
 Definition expr := list basic_instruction.
 
-Inductive labelidx : Type :=
-| Mk_labelidx : nat -> labelidx.
-
-Inductive funcidx : Type :=
-| Mk_funcidx : nat -> funcidx.
-
-Inductive tableidx : Type :=
-| Mk_tableidx : nat -> tableidx.
-
-Inductive memidx : Type :=
-| Mk_memidx : nat -> memidx.
-
-Inductive typeidx : Type :=
-| Mk_typeidx : nat -> typeidx.
-
-Inductive localidx : Type :=
-| Mk_localidx : nat -> localidx.
-
-Inductive globalidx : Type :=
-| Mk_globalidx : nat -> globalidx.
-
 Inductive import_desc : Type :=
 | ID_func : nat -> import_desc
 | ID_table : table_type -> import_desc
 | ID_mem : memory_type -> import_desc
 | ID_global : global_type -> import_desc.
-
-Definition name := list Byte.byte.
 
 Record module_import : Type := {
   imp_module : name;
@@ -581,6 +573,79 @@ Inductive extern_t : Type :=
 .
 
 
+
+Definition id : Type := i32.
+
+Definition field_name := name (* TODO: ? *).
+
+Inductive host_arith : Type := (* TODO *) .
+Inductive host_list_op : Type := (* TODO *) .
+Inductive wasm_table_op : Type := (* TODO *) .
+Inductive wasm_memory_op : Type := (* TODO *) .
+Inductive wasm_global_op : Type := (* TODO *) .
+
+Inductive host_value : Type :=
+| HV_byte : bytes.byte -> host_value
+| HV_wasm_value : value -> host_value
+| HV_wov : wasm_object_value -> host_value
+| HV_module : module -> host_value
+| HV_record : list host_value -> host_value
+| HV_list : list host_value -> host_value
+.
+
+Inductive host_expr : Type :=
+| HE_value : host_value -> host_expr
+| HE_getglobal : id -> host_expr
+| HE_setglobal : id -> host_expr -> host_expr
+| HE_getlocal : N -> host_expr
+| HE_setlocal : N -> id -> host_expr
+| HE_if : id -> host_expr -> host_expr -> host_expr
+| HE_while : id -> host_expr -> host_expr
+| HE_seq : host_expr -> host_expr -> host_expr
+| HE_arith : host_arith -> host_expr
+| HE_list_op : host_list_op -> host_expr
+| HE_return : list id -> host_expr
+| HE_new_rec : list (field_name * id) -> host_expr
+| HE_get_field : id -> field_name -> host_expr
+| HE_new_host_func : function_type -> N -> host_expr -> host_expr
+| HE_call : id -> list id -> host_expr
+| HE_wasm_table_op : wasm_table_op -> host_expr
+| HE_wasm_memory_op : wasm_memory_op -> host_expr
+| HE_wasm_global_op : wasm_global_op -> host_expr
+| HE_compile : id -> host_expr
+| HE_instantiate : id -> id -> host_expr
+.
+
+(** * Administrative Instructions **)
+
+(** std-doc:
+WebAssembly code consists of sequences of instructions. Its computational model is based on a stack machine in that instructions manipulate values on an implicit operand stack, consuming (popping) argument values and producing or returning (pushing) result values.
+
+In addition to dynamic operands from the stack, some instructions also have static immediate arguments, typically indices or type annotations, which are part of the instruction itself.
+
+Some instructions are structured in that they bracket nested sequences of instructions.
+[https://webassembly.github.io/spec/core/syntax/instructions.html]
+
+In order to express the reduction of traps, calls, and control instructions,
+the syntax of instructions is extended to include the following administrative
+instructions:
+*)
+Inductive administrative_instruction : Type := (* e *)
+| AI_basic : basic_instruction -> administrative_instruction
+| AI_trap
+| AI_invoke : funcaddr -> administrative_instruction
+| AI_label : nat -> seq administrative_instruction -> seq administrative_instruction -> administrative_instruction
+| AI_local : nat -> frame -> seq administrative_instruction -> administrative_instruction
+| AI_host_frame : list value_type (* TODO: is that right??? *) -> list host_value -> host_expr -> administrative_instruction
+| AI_wasm_frame : expr -> administrative_instruction
+.
+
+Inductive lholed : Type :=
+| LH_base : list administrative_instruction -> list administrative_instruction -> lholed
+| LH_rec : list administrative_instruction -> nat -> list administrative_instruction -> lholed -> list administrative_instruction -> lholed
+.
+
+
 (** Some types used in the interpreter. **)
 
 Definition config_tuple : Type := store_record * frame * seq administrative_instruction.
@@ -599,7 +664,3 @@ Inductive res_step : Type :=
   .
 
 Definition res_tuple : Type := store_record * frame * res_step.
-
-End Host.
-Arguments FC_func_native [host_function].
-

@@ -23,15 +23,6 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Section Host.
-
-Variable host_function : eqType.
-
-Let function_closure := function_closure host_function.
-Let store_record := store_record host_function.
-(*Let administrative_instruction := administrative_instruction host_function.
-Let lholed := lholed host_function.*)
-
 
 (* TODO: Documentation *)
 
@@ -598,7 +589,4 @@ Inductive config_typing : store_record -> frame -> seq administrative_instructio
   store_typing s ->
   s_typing s None f es ts ->
   config_typing s f es ts.
-
-
-End Host.
 

@@ -215,18 +215,8 @@ Definition eqinstanceP : Equality.axiom instance_eqb :=
 Canonical Structure instance_eqMixin := EqMixin eqinstanceP.
 Canonical Structure instance_eqType := Eval hnf in EqType instance instance_eqMixin.
 
-Section Host.
-
-Variable host_function : eqType.
-
-Let function_closure := function_closure host_function.
-Let store_record := store_record host_function.
-(*Let administrative_instruction := administrative_instruction host_function.
-Let lholed := lholed host_function.
-Let res_step := res_step host_function.*)
-
 Let administrative_instruction_rect :=
-  @administrative_instruction_rect (*host_function*)
+  @administrative_instruction_rect
   : forall (P : administrative_instruction -> Type), _.
 
 Definition function_closure_eq_dec : forall (cl1 cl2 : function_closure),
@@ -301,6 +291,26 @@ Definition eqmodule_exportP : Equality.axiom module_export_eqb :=
 
 Canonical Structure module_export_eqMixin := EqMixin eqmodule_exportP.
 Canonical Structure module_export_eqType := Eval hnf in EqType module_export module_export_eqMixin.
+
+Definition host_value_eq_dec : forall v1 v2 : host_value, {v1 = v2} + {v1 <> v2}.
+Proof. (* TODO *) Admitted.
+
+Definition host_value_eqb v1 v2 : bool := host_value_eq_dec v1 v2.
+Definition eqhost_valueP : Equality.axiom host_value_eqb :=
+  eq_dec_Equality_axiom host_value_eq_dec.
+
+Canonical Structure host_value_eqMixin := EqMixin eqhost_valueP.
+Canonical Structure host_value_eqType := Eval hnf in EqType host_value host_value_eqMixin.
+
+Definition host_expr_eq_dec : forall v1 v2 : host_expr, {v1 = v2} + {v1 <> v2}.
+Proof. (* TODO *) Admitted.
+
+Definition host_expr_eqb v1 v2 : bool := host_expr_eq_dec v1 v2.
+Definition eqhost_exprP : Equality.axiom host_expr_eqb :=
+  eq_dec_Equality_axiom host_expr_eq_dec.
+
+Canonical Structure host_expr_eqMixin := EqMixin eqhost_exprP.
+Canonical Structure host_expr_eqType := Eval hnf in EqType host_expr host_expr_eqMixin.
 
 (** Induction scheme for [administrative_instruction]. **)
 Definition administrative_instruction_rect' :=
@@ -391,6 +401,4 @@ Definition eqres_stepP : Equality.axiom res_step_eqb :=
 
 Canonical Structure res_step_eqMixin := EqMixin eqres_stepP.
 Canonical Structure res_step_eqType := Eval hnf in EqType res_step res_step_eqMixin.
-
-End Host.
 
