@@ -637,7 +637,7 @@ Inductive administrative_instruction : Type := (* e *)
 | AI_label : nat -> seq administrative_instruction -> seq administrative_instruction -> administrative_instruction
 | AI_local : nat -> frame -> seq administrative_instruction -> administrative_instruction
 | AI_host_frame : list value_type (* TODO: is that right??? *) -> list host_value -> host_expr -> administrative_instruction
-| AI_wasm_frame : expr -> administrative_instruction
+| AI_wasm_frame : seq administrative_instruction -> administrative_instruction
 .
 
 Inductive lholed : Type :=
