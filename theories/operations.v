@@ -339,7 +339,7 @@ Definition types_agree (t : value_type) (v : value) : bool :=
 Definition cl_type (cl : function_closure) : function_type :=
   match cl with
   | FC_func_native _ tf _ _ => tf
-  | FC_func_host tf _ => tf
+  | FC_func_host tf _ _ => tf
   end.
 
 Definition rglob_is_mut (g : global) : bool :=

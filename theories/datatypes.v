@@ -422,30 +422,6 @@ Record global : Type := {
 }.
 
 (** std-doc:
-A function instance is the runtime representation of a function. It effectively
-is a closure of the original function over the runtime module instance of its
-originating module. The module instance is used to resolve references to other
-definitions during execution of the function.
-*)
-Inductive function_closure : Type := (* cl *)
-  | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
-  | FC_func_host : function_type -> funcidx (* TODO: is that what we want? *) -> function_closure
-.
-
-(** std-doc:
-The store represents all global state that can be manipulated by WebAssembly
-programs. It consists of the runtime representation of all instances of
-functions, tables, memories, and globals that have been allocated during the
-life time of the abstract machine
-*)
-Record store_record : Type := (* s *) {
-  s_funcs : list function_closure;
-  s_tables : list tableinst;
-  s_mems : list memory;
-  s_globals : list global;
-}.
-
-(** std-doc:
 
 [https://webassembly.github.io/spec/core/exec/runtime.html#syntax-frame]
 *)
@@ -572,8 +548,6 @@ Inductive extern_t : Type :=
 | ET_glob : global_type -> extern_t
 .
 
-
-
 Definition id : Type := i32.
 
 Definition field_name := name (* TODO: ? *).
@@ -593,28 +567,6 @@ Inductive host_value : Type :=
 | HV_list : list host_value -> host_value
 .
 
-Inductive host_expr : Type :=
-| HE_value : host_value -> host_expr
-| HE_getglobal : id -> host_expr
-| HE_setglobal : id -> host_expr -> host_expr
-| HE_getlocal : N -> host_expr
-| HE_setlocal : N -> id -> host_expr
-| HE_if : id -> host_expr -> host_expr -> host_expr
-| HE_while : id -> host_expr -> host_expr
-| HE_seq : host_expr -> host_expr -> host_expr
-| HE_arith : host_arith -> host_expr
-| HE_list_op : host_list_op -> host_expr
-| HE_return : list id -> host_expr
-| HE_new_rec : list (field_name * id) -> host_expr
-| HE_get_field : id -> field_name -> host_expr
-| HE_new_host_func : function_type -> N -> host_expr -> host_expr
-| HE_call : id -> list id -> host_expr
-| HE_wasm_table_op : wasm_table_op -> host_expr
-| HE_wasm_memory_op : wasm_memory_op -> host_expr
-| HE_wasm_global_op : wasm_global_op -> host_expr
-| HE_compile : id -> host_expr
-| HE_instantiate : id -> id -> host_expr
-.
 
 (** * Administrative Instructions **)
 
@@ -637,8 +589,55 @@ Inductive administrative_instruction : Type := (* e *)
 | AI_label : nat -> seq administrative_instruction -> seq administrative_instruction -> administrative_instruction
 | AI_local : nat -> frame -> seq administrative_instruction -> administrative_instruction
 | AI_host_frame : list value_type (* TODO: is that right??? *) -> list host_value -> host_expr -> administrative_instruction
-| AI_wasm_frame : seq administrative_instruction -> administrative_instruction
+with host_expr : Type :=
+| HE_value : host_value -> host_expr
+| HE_getglobal : id -> host_expr
+| HE_setglobal : id -> host_expr -> host_expr
+| HE_getlocal : N -> host_expr
+| HE_setlocal : N -> id -> host_expr
+| HE_if : id -> host_expr -> host_expr -> host_expr
+| HE_while : id -> host_expr -> host_expr
+| HE_seq : host_expr -> host_expr -> host_expr
+| HE_arith : host_arith -> host_expr
+| HE_list_op : host_list_op -> host_expr
+| HE_return : list id -> host_expr
+| HE_new_rec : list (field_name * id) -> host_expr
+| HE_get_field : id -> field_name -> host_expr
+| HE_new_host_func : function_type -> N -> host_expr -> host_expr
+| HE_call : id -> list id -> host_expr
+| HE_wasm_table_op : wasm_table_op -> host_expr
+| HE_wasm_memory_op : wasm_memory_op -> host_expr
+| HE_wasm_global_op : wasm_global_op -> host_expr
+| HE_compile : id -> host_expr
+| HE_instantiate : id -> id -> host_expr
+| HE_host_frame : list value_type -> list host_value -> host_expr -> host_expr
+| HE_wasm_frame : list administrative_instruction -> host_expr
 .
+
+(** std-doc:
+A function instance is the runtime representation of a function. It effectively
+is a closure of the original function over the runtime module instance of its
+originating module. The module instance is used to resolve references to other
+definitions during execution of the function.
+*)
+Inductive function_closure : Type := (* cl *)
+  | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
+  | FC_func_host : function_type -> nat -> host_expr (* TODO: check - R *) (* TODO: is that what we want? *) -> function_closure
+.
+
+(** std-doc:
+The store represents all global state that can be manipulated by WebAssembly
+programs. It consists of the runtime representation of all instances of
+functions, tables, memories, and globals that have been allocated during the
+life time of the abstract machine
+*)
+Record store_record : Type := (* s *) {
+  s_funcs : list function_closure;
+  s_tables : list tableinst;
+  s_mems : list memory;
+  s_globals : list global;
+}.
+
 
 Inductive lholed : Type :=
 | LH_base : list administrative_instruction -> list administrative_instruction -> lholed

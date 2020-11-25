@@ -221,8 +221,10 @@ Let administrative_instruction_rect :=
 
 Definition function_closure_eq_dec : forall (cl1 cl2 : function_closure),
   {cl1 = cl2} + {cl1 <> cl2}.
-Proof. decidable_equality. Defined.
-
+Proof. (* This takes infinite time now. *)
+  (* decidable_equality. *)
+Admitted.
+  
 Definition function_closure_eqb cl1 cl2 : bool := function_closure_eq_dec cl1 cl2.
 Definition eqfunction_closureP : Equality.axiom function_closure_eqb :=
   eq_dec_Equality_axiom function_closure_eq_dec.

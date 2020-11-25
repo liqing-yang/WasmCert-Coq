@@ -143,22 +143,22 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
         es <> [::AI_trap] ->
         lfilled 0 lh [::AI_trap] es ->
         reduce_simple es [::AI_trap]
-  .
+.
 
+(*
+(* TODO: I think this approach here is better, albeit different from the doc - R *)
 Record host_state := {
   hs_varmap : id -> option host_value;
   hs_funcs : list host_expr;
 }.
+ *)
 
-Inductive host_reduce : host_state -> store_record -> frame -> list host_value -> host_expr ->
-   host_state -> store_record -> frame -> list host_value -> host_expr -> Prop :=
-   (* TODO: add all the cases *)
-   .
+Definition host_state : Type := id -> option host_value.
 
 Definition lookup_host_vars (vcs : list i32) hs : option (list host_value) :=
   list_extra.those
     (List.map
-      (fun i => hs.(hs_varmap) i)
+      (fun i => hs i)
       vcs).
 
 Definition lookup_host_vars_as_i32s vcs hs : option (list host_value) :=
@@ -167,14 +167,39 @@ Definition lookup_host_vars_as_i32s vcs hs : option (list host_value) :=
       (fun x =>
         match x with
         | VAL_int32 i =>
-          hs.(hs_varmap) i
+          hs i
         | _ => None
         end)
       vcs).
 
+Print host_value.
+
+Inductive host_value_to_wasm : list host_value -> list value -> Prop :=
+| HVTW_nil: host_value_to_wasm [::] [::]
+| HVTW_cons: forall hvs vs v,
+  host_value_to_wasm hvs vs ->
+  host_value_to_wasm ((HV_wasm_value v) :: hvs) (v :: vs)
+.
+
+Inductive host_reduce : host_state -> store_record -> list host_value -> host_expr ->
+   host_state -> store_record -> list host_value -> host_expr -> Prop :=
+  | hr_host_call_wasm:
+    (* TODO: check *)
+    forall hs s ids cl id i j vts bes tf vs tn tm vars hvs,
+      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      List.nth_error s.(s_funcs) i = Some cl ->
+      cl = FC_func_native j tf vts bes ->
+      tf = Tf tn tm ->
+      lookup_host_vars ids hs = Some vars ->
+      host_value_to_wasm vars vs ->
+      tn = map typeof vs ->
+      host_reduce hs s hvs (HE_call id ids) hs s hvs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
+   (* TODO: add all the cases *)
+   
+
 (* TODO: needs all the host_expr reduction steps: compile, instantiate, etc. *)
 (* TODO: needs restructuring to make sense *)
-Inductive reduce : host_state -> store_record -> frame -> list administrative_instruction ->
+with reduce : host_state -> store_record -> frame -> list administrative_instruction ->
                    host_state -> store_record -> frame -> list administrative_instruction -> Prop :=
   | r_simple :
       forall e e' s f hs,
@@ -217,10 +242,10 @@ Inductive reduce : host_state -> store_record -> frame -> list administrative_in
         reduce hs s f (ves ++ [::AI_invoke a]) hs s f [::AI_local m f' [::AI_basic (BI_block (Tf [::] t2s) es)]]
   | r_invoke_host :
     (* TODO: check *)
-    forall a cl idx e t1s t2s ves vcs m n s s' f hs hs' vs,
+    (* TODO: check - R *)  
+    forall a cl e t1s t2s ves vcs m n s s' f hs hs' vs,
       List.nth_error s.(s_funcs) a = Some cl ->
-      cl = FC_func_host (Tf t1s t2s) (Mk_funcidx idx) ->
-      Some e = List.nth_error hs.(hs_funcs) idx ->
+      cl = FC_func_host (Tf t1s t2s) n e ->
       ves = v_to_e_list vcs ->
       length vcs = n ->
       length t1s = n ->
@@ -230,18 +255,11 @@ Inductive reduce : host_state -> store_record -> frame -> list administrative_in
 
   | r_host_step :
     (* TODO: check *)
-    forall hs s (f : frame) ts vs e hs' s' f' vs' e',
-      host_reduce hs s f vs e hs' s' f' vs' e' ->
+    forall hs s (f : frame) ts vs e hs' s' vs' e',
+      host_reduce hs s vs e hs' s' vs' e' ->
         reduce hs s f [::AI_host_frame ts vs e] hs' s' f [::AI_host_frame ts vs' e']
-
-        (*
-  | r_wasm_frame :
-      (* TODO: check *)
-    forall hs s (f : frame) ts vs e hs' s' f' vs' e',
-      reduce hs s f e hs' s' f' e' ->
-        reduce hs s f [::AI_wasm_frame e] hs s' f' [::AI_wasm_frame e']
-        *)
-
+  (* Don't think we should deal with these here tbh, probably should be in host_reduce *)
+               (*
   | r_host_call_native :
     (* TODO: check *)
     forall hs s f vts vs bes,
@@ -253,14 +271,14 @@ Inductive reduce : host_state -> store_record -> frame -> list administrative_in
   | r_host_call_host :
     (* TODO: check *)
     reduce hs s f [::AI_host_frame vts vs (HE_call id ids)] [::AI_host_frame vts vs e]
-
+*)
   | r_host_return :
     (* TODO: check *)
     forall hs s f ts vs ids vs' vs'',
     Some vs' = lookup_host_vars ids hs ->
     Some vs'' = list_extra.those (List.map (fun x => match x with | HV_wasm_value v => Some v | _ => None end) vs') ->
     reduce hs s f [::AI_host_frame ts vs (HE_return ids)] hs s f (v_to_e_list vs'')
-  
+(*  
   | r_host_new_host_func :
     (* TODO: check *)
     forall hs s f ts vs tf n e idx idx_h hs' s',
@@ -270,7 +288,7 @@ Inductive reduce : host_state -> store_record -> frame -> list administrative_in
     s' = {| s_funcs := s.(s_funcs) ++ [::(FC_func_host tf (Mk_funcidx idx_h))]; s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
     reduce hs s f [::AI_host_frame ts vs (HE_new_host_func tf n e)]
       hs' s' f [::AI_host_frame ts vs (HE_value (HV_wov (WOV_funcref (Mk_funcidx idx_h))))]
-
+*)
   (** get, set, load, and store operations **)
   | r_get_local :
       forall f v j s hs,
