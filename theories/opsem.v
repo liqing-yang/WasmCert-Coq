@@ -172,7 +172,9 @@ Definition lookup_host_vars_as_i32s vcs hs : option (list host_value) :=
         end)
       vcs).
 
-Print host_value.
+Definition empty_instance := Build_instance [::] [::] [::] [::] [::].
+
+Definition empty_frame := Build_frame [::] empty_instance.
 
 Inductive host_value_to_wasm : list host_value -> list value -> Prop :=
 | HVTW_nil: host_value_to_wasm [::] [::]
@@ -183,7 +185,7 @@ Inductive host_value_to_wasm : list host_value -> list value -> Prop :=
 
 Inductive host_reduce : host_state -> store_record -> list host_value -> host_expr ->
    host_state -> store_record -> list host_value -> host_expr -> Prop :=
-  | hr_host_call_wasm:
+  | hr_call_wasm:
     (* TODO: check *)
     forall hs s ids cl id i j vts bes tf vs tn tm vars hvs,
       hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
@@ -193,6 +195,18 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       lookup_host_vars ids hs = Some vars ->
       host_value_to_wasm vars vs ->
       tn = map typeof vs ->
+      host_reduce hs s hvs (HE_call id ids) hs s hvs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
+  | hr_wasm_step: forall hs s s' hvs we we',
+      reduce hs s empty_frame we hs s empty_frame we' ->
+      host_reduce hs s hvs (HE_wasm_frame we) hs s' hvs (HE_wasm_frame we')
+  | hr_call_host:
+    forall hs s ids cl id i n e tf vs tn tm vars hvs,
+      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      List.nth_error s.(s_funcs) i = Some cl ->
+      cl = FC_func_host tf n e ->
+      tf = HTf tn tm ->
+      lookup_host_vars ids hs = Some vars ->
+      tn = map host_typeof vars ->
       host_reduce hs s hvs (HE_call id ids) hs s hvs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
    (* TODO: add all the cases *)
    
@@ -259,7 +273,7 @@ with reduce : host_state -> store_record -> frame -> list administrative_instruc
       host_reduce hs s vs e hs' s' vs' e' ->
         reduce hs s f [::AI_host_frame ts vs e] hs' s' f [::AI_host_frame ts vs' e']
   (* Don't think we should deal with these here tbh, probably should be in host_reduce *)
-               (*
+             (*
   | r_host_call_native :
     (* TODO: check *)
     forall hs s f vts vs bes,

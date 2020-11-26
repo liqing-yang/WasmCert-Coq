@@ -622,7 +622,7 @@ definitions during execution of the function.
 *)
 Inductive function_closure : Type := (* cl *)
   | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
-  | FC_func_host : function_type -> nat -> host_expr (* TODO: check - R *) (* TODO: is that what we want? *) -> function_closure
+  | FC_func_host : host_function_type -> nat -> host_expr (* TODO: check - R *) (* TODO: is that what we want? *) -> function_closure
 .
 
 (** std-doc:

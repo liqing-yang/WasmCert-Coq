@@ -116,6 +116,16 @@ Definition typeof (v : value) : value_type :=
   | VAL_float64 _ => T_f64
   end.
 
+Definition host_typeof (hv : host_value) : host_type :=
+  match hv with
+  | HV_byte _ => HT_byte
+  | HV_wasm_value _ => HT_wt
+  | HV_wov _ => HT_wot
+  | HV_module _ => HT_moduleref
+  | HV_record _ => HT_record
+  | HV_list _ => HT_list
+  end.
+
 Definition option_projl (A B : Type) (x : option (A * B)) : option A :=
   option_map fst x.
 
