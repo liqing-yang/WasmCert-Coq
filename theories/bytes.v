@@ -27,7 +27,6 @@ Definition eqbyteP : Equality.axiom byte_eqb :=
 Canonical Structure byte_eqMixin := EqMixin eqbyteP.
 Canonical Structure byte_eqType := Eval hnf in EqType byte byte_eqMixin.
 
-
 Definition bytes := seq byte.
 
 Definition bytes_eq_dec : forall (a b : bytes), {a = b} + {a <> b}.

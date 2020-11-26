@@ -4,7 +4,7 @@
 
 From Coq Require Import NArith.BinNat ZArith.BinInt.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
-Require Import operations.
+Require Import operations binary_format_parser.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -172,15 +172,70 @@ Definition lookup_host_vars_as_i32s vcs hs : option (list host_value) :=
         end)
       vcs).
 
+(* TODO: refactor these into datatypes/operations.v accordingly. *)
 Definition empty_instance := Build_instance [::] [::] [::] [::] [::].
 
 Definition empty_frame := Build_frame [::] empty_instance.
 
+Fixpoint is_byte_list (hvs: list host_value) : bool :=
+  match hvs with
+  | [::] => true
+  | hv :: hvs' => if hv is HV_byte _ then is_byte_list hvs' else false
+  end.
+
+Fixpoint host_value_to_byte (hv: host_value) : option byte :=
+  match hv with
+  | HV_byte b => Some b
+  | _ => None
+  end.
+
+Fixpoint host_list_byte_extract (hvs: list host_value) : option (list byte) :=
+  let bs := map host_value_to_byte hvs in
+  list_extra.those bs.
+
 (* Due to host's ability to invoke wasm functions and wasm's ability to invoke host
      functions, the opsem is necessarily mutually recursive. *)
 (* TODO: add all the cases *)
+
 Inductive host_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
+  (* TODO: basic exprs -- arith ops, list ops left *)
+  | hr_getglobal:
+    forall hs s hvs id hv,
+      hs id = Some hv ->
+      host_reduce hs s hvs (HE_getglobal id) hs s hvs (HE_value hv)
+  | hr_setglobal_reduce:
+    forall hs s hvs id e hs' s' hvs' e',
+      host_reduce hs s hvs e hs' s' hvs' e' ->
+      host_reduce hs s hvs (HE_setglobal id e) hs' s' hvs' (HE_setglobal id e')
+  | hr_setglobal_value:
+    forall hs s hvs id hv hs',
+      hs' = (fun idx => if idx == id then (Some hv) else (hs idx)) ->
+      host_reduce hs s hvs (HE_setglobal id (HE_value hv)) hs' s hvs (HE_skip)
+  | hr_getlocal:
+    forall hs s hvs n hv,
+      List.nth_error hvs (nat_of_N n) = Some hv ->
+      host_reduce hs s hvs (HE_getlocal n) hs s hvs (HE_value hv)
+  | hr_setlocal:
+    forall hs s hvs n id hvs' hv hvd,
+      hs id = Some hv ->
+      hvs' = set_nth hvd hvs (nat_of_N n) hv ->
+      host_reduce hs s hvs (HE_setlocal n id) hs s hvs' (HE_skip)
+  | hr_if_true: (* TODO: add the case for invalid id, ie. hs(id) = None *)
+    forall hs s hvs id e1 e2 hv,
+      hs id = Some hv ->
+      hv <> HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
+      host_reduce hs s hvs (HE_if id e1 e2) hs s hvs e1
+  | hr_if_false: 
+    forall hs s hvs id e1 e2 hv,
+      hs id = Some hv ->
+      hv = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
+      host_reduce hs s hvs (HE_if id e1 e2) hs s hvs e2
+  | hr_while:
+    forall hs s hvs id e,
+      host_reduce hs s hvs (HE_while id e) hs s hvs (HE_if id (HE_seq e (HE_while id e)) HE_skip)
+  (* TODO: record exprs *)
+  (* function exprs *)
   | hr_new_host_func:
     forall hs s hvs htf hvsn e s' n,
       s' = {|s_funcs := s.(s_funcs) ++ [::FC_func_host htf hvsn e]; s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
@@ -196,9 +251,8 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       list_host_value_to_wasm vars = Some vs ->
       tn = map typeof vs ->
       host_reduce hs s hvs (HE_call id ids) hs s hvs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
-  | hr_wasm_step: forall hs s s' hvs we we',
-      reduce hs s empty_frame we hs s empty_frame we' ->
-      host_reduce hs s hvs (HE_wasm_frame we) hs s' hvs (HE_wasm_frame we')
+  (* TODO: wasm state exprs *)
+  (* wasm module expr *)
   | hr_call_host:
     forall hs s ids cl id i n e tf vs tn tm vars hvs,
       hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
@@ -208,6 +262,35 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       lookup_host_vars ids hs = Some vars ->
       tn = map host_typeof vars ->
       host_reduce hs s hvs (HE_call id ids) hs s hvs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
+  | hr_compile:
+    forall hs s hvs id mo hv hbytes,
+      hs id = Some (HV_list hv) ->
+      host_list_byte_extract hv = Some hbytes ->
+      run_parse_module (map byte_of_compcert_byte hbytes) = Some mo -> (* Check: is this correct? *)
+      host_reduce hs s hvs (HE_compile id) hs s hvs (HE_value (HV_module mo))
+  (* TODO: our current instantiation seems to instantiate to itree -- how do we 
+       incorporate it here?
+  | hr_instantiate:
+      idm = HV_module mo ->
+      idr = HV_record r ->
+      host_reduce hs s hvs (HE_instantiate idm idr) hs s hvs *)
+  (* miscellaneous *)
+  | hr_seq_skip:
+    forall hs s hvs e,
+      host_reduce hs s hvs (HE_seq HE_skip e) hs s hvs e
+  | hr_seq_fst:
+    forall hs s hvs e1 e2 hs' s' hvs' e1',
+      host_reduce hs s hvs e1 hs' s' hvs' e1' ->
+      host_reduce hs s hvs (HE_seq e1 e2) hs' s' hvs' (HE_seq e1' e2)
+  | hr_seq_snd:
+    forall hs s hvs v e hs' s' hvs' e',
+      host_reduce hs s hvs e hs' s' hvs' e' ->
+      host_reduce hs s hvs (HE_seq (HE_value v) e) hs' s' hvs' (HE_seq (HE_value v) e')
+  | hr_wasm_step: forall hs s s' hvs we we',
+      reduce hs s empty_frame we hs s empty_frame we' ->
+      host_reduce hs s hvs (HE_wasm_frame we) hs s' hvs (HE_wasm_frame we')
+      
+                  
    
 
 (* TODO: needs all the host_expr reduction steps: compile, instantiate, etc. *)
