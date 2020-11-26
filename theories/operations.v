@@ -116,14 +116,53 @@ Definition typeof (v : value) : value_type :=
   | VAL_float64 _ => T_f64
   end.
 
+Definition host_wov_typeof (wov: wasm_object_value) : wasm_object_type :=
+  match wov with
+  | WOV_funcref _ => WOT_funcref
+  | WOV_tableref _ => WOT_tableref
+  | WOV_memoryref _ => WOT_memoryref
+  | WOV_globalref _ => WOT_globalref
+  end.
+
 Definition host_typeof (hv : host_value) : host_type :=
   match hv with
   | HV_byte _ => HT_byte
-  | HV_wasm_value _ => HT_wt
-  | HV_wov _ => HT_wot
+  | HV_wasm_value v => HT_wt (typeof v)
+  | HV_wov wov => HT_wot (host_wov_typeof wov)
   | HV_module _ => HT_moduleref
   | HV_record _ => HT_record
   | HV_list _ => HT_list
+  end.
+
+Definition host_value_to_wasm (hv: host_value) : option value :=
+  match hv with
+  | HV_wasm_value v => Some v
+  | _ => None
+  end.
+
+Definition list_host_value_to_wasm (hvs: list host_value) : option (list value) :=
+  list_extra.those (map host_value_to_wasm hvs).
+
+Definition host_type_to_wasm (hvt: host_type) : option value_type :=
+  match hvt with
+  | HT_wt t => Some t
+  | _ => None
+  end.
+
+Definition list_host_type_to_wasm (hvts: list host_type) : option (list value_type) :=
+  list_extra.those (map host_type_to_wasm hvts).
+
+Definition host_function_type_to_wasm (htf: host_function_type) : option function_type :=
+  match htf with
+  | HTf htn htm =>
+    match (list_host_type_to_wasm htn) with
+    | Some tn =>
+      match (list_host_type_to_wasm htm) with
+      | Some tm => Some (Tf tn tm)
+      | None => None
+      end
+    | None => None
+    end
   end.
 
 Definition option_projl (A B : Type) (x : option (A * B)) : option A :=
@@ -346,10 +385,10 @@ Definition app_relop (op: relop) (v1: value) (v2: value) :=
 Definition types_agree (t : value_type) (v : value) : bool :=
   (typeof v) == t.
 
-Definition cl_type (cl : function_closure) : function_type :=
+Definition cl_type (cl : function_closure) : option function_type :=
   match cl with
-  | FC_func_native _ tf _ _ => tf
-  | FC_func_host tf _ _ => tf
+  | FC_func_native _ tf _ _ => Some tf
+  | FC_func_host htf _ _ => host_function_type_to_wasm htf
   end.
 
 Definition rglob_is_mut (g : global) : bool :=

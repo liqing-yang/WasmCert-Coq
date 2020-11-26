@@ -2,7 +2,7 @@
 (** The interpreter in the [interpreter] module is an executable version of this operational semantics. **)
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
 
-From Coq Require Import ZArith.BinInt.
+From Coq Require Import NArith.BinNat ZArith.BinInt.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 Require Import operations.
 
@@ -176,24 +176,24 @@ Definition empty_instance := Build_instance [::] [::] [::] [::] [::].
 
 Definition empty_frame := Build_frame [::] empty_instance.
 
-Inductive host_value_to_wasm : list host_value -> list value -> Prop :=
-| HVTW_nil: host_value_to_wasm [::] [::]
-| HVTW_cons: forall hvs vs v,
-  host_value_to_wasm hvs vs ->
-  host_value_to_wasm ((HV_wasm_value v) :: hvs) (v :: vs)
-.
-
+(* Due to host's ability to invoke wasm functions and wasm's ability to invoke host
+     functions, the opsem is necessarily mutually recursive. *)
+(* TODO: add all the cases *)
 Inductive host_reduce : host_state -> store_record -> list host_value -> host_expr ->
-   host_state -> store_record -> list host_value -> host_expr -> Prop :=
+                        host_state -> store_record -> list host_value -> host_expr -> Prop :=
+  | hr_new_host_func:
+    forall hs s hvs htf hvsn e s' n,
+      s' = {|s_funcs := s.(s_funcs) ++ [::FC_func_host htf hvsn e]; s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
+      n = length s.(s_funcs) ->
+      host_reduce hs s hvs (HE_new_host_func htf (N_of_nat hvsn) e) hs s' hvs (HE_value (HV_wov (WOV_funcref (Mk_funcidx n))))
   | hr_call_wasm:
-    (* TODO: check *)
     forall hs s ids cl id i j vts bes tf vs tn tm vars hvs,
       hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       List.nth_error s.(s_funcs) i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
       lookup_host_vars ids hs = Some vars ->
-      host_value_to_wasm vars vs ->
+      list_host_value_to_wasm vars = Some vs ->
       tn = map typeof vs ->
       host_reduce hs s hvs (HE_call id ids) hs s hvs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
   | hr_wasm_step: forall hs s s' hvs we we',
@@ -208,7 +208,6 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       lookup_host_vars ids hs = Some vars ->
       tn = map host_typeof vars ->
       host_reduce hs s hvs (HE_call id ids) hs s hvs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
-   (* TODO: add all the cases *)
    
 
 (* TODO: needs all the host_expr reduction steps: compile, instantiate, etc. *)
@@ -226,16 +225,18 @@ with reduce : host_state -> store_record -> frame -> list administrative_instruc
         List.nth_error f.(f_inst).(inst_funcs) i = Some a ->
         reduce hs s f [::AI_basic (BI_call i)] hs s f [::AI_invoke a]
   | r_call_indirect_success :
-      forall s f i a cl c hs,
+      forall s f i a cl tf c hs,
         stab_addr s f (Wasm_int.nat_of_uint i32m c) = Some a ->
         List.nth_error s.(s_funcs) a = Some cl ->
-        stypes s f.(f_inst) i = Some (cl_type cl) ->
+        cl_type cl = Some tf ->
+        stypes s f.(f_inst) i = Some tf ->
         reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_invoke a]
   | r_call_indirect_failure1 :
-      forall s f i a cl c hs,
+      forall s f i a cl tf c hs,
         stab_addr s f (Wasm_int.nat_of_uint i32m c) = Some a ->
         List.nth_error s.(s_funcs) a = Some cl ->
-        stypes s f.(f_inst) i <> Some (cl_type cl) ->
+        cl_type cl = Some tf ->
+        stypes s f.(f_inst) i <> Some tf ->
         reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_trap]
   | r_call_indirect_failure2 :
       forall s f i c hs,
@@ -257,9 +258,10 @@ with reduce : host_state -> store_record -> frame -> list administrative_instruc
   | r_invoke_host :
     (* TODO: check *)
     (* TODO: check - R *)  
-    forall a cl e t1s t2s ves vcs m n s s' f hs hs' vs,
+    forall a cl e htf t1s t2s ves vcs m n s s' f hs hs' vs,
       List.nth_error s.(s_funcs) a = Some cl ->
-      cl = FC_func_host (Tf t1s t2s) n e ->
+      cl = FC_func_host htf n e ->
+      host_function_type_to_wasm htf = Some (Tf t1s t2s) ->
       ves = v_to_e_list vcs ->
       length vcs = n ->
       length t1s = n ->
@@ -273,6 +275,7 @@ with reduce : host_state -> store_record -> frame -> list administrative_instruc
       host_reduce hs s vs e hs' s' vs' e' ->
         reduce hs s f [::AI_host_frame ts vs e] hs' s' f [::AI_host_frame ts vs' e']
   (* Don't think we should deal with these here tbh, probably should be in host_reduce *)
+  (* Also, does the host_frame and wasm_frame really cancel each other? Looks weird..*)
              (*
   | r_host_call_native :
     (* TODO: check *)

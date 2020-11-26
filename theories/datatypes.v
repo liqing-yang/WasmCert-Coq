@@ -430,17 +430,17 @@ Record frame : Type := (* f *) {
   f_inst: instance
 }.
 
-Inductive wot : Type :=
-| WOT_funcref : wot
-| WOT_tableref : wot
-| WOT_memoryref : wot
-| WOT_globalref : wot
+Inductive wasm_object_type : Type :=
+| WOT_funcref : wasm_object_type
+| WOT_tableref : wasm_object_type
+| WOT_memoryref : wasm_object_type
+| WOT_globalref : wasm_object_type
 .
 
 Inductive host_type : Type :=
 | HT_byte : host_type
-| HT_wt : host_type
-| HT_wot : host_type
+| HT_wt : value_type -> host_type
+| HT_wot : wasm_object_type -> host_type
 | HT_moduleref : host_type
 | HT_record : host_type
 | HT_list : host_type
@@ -603,7 +603,7 @@ with host_expr : Type :=
 | HE_return : list id -> host_expr
 | HE_new_rec : list (field_name * id) -> host_expr
 | HE_get_field : id -> field_name -> host_expr
-| HE_new_host_func : function_type -> N -> host_expr -> host_expr
+| HE_new_host_func : host_function_type -> N -> host_expr -> host_expr
 | HE_call : id -> list id -> host_expr
 | HE_wasm_table_op : wasm_table_op -> host_expr
 | HE_wasm_memory_op : wasm_memory_op -> host_expr
@@ -611,7 +611,7 @@ with host_expr : Type :=
 | HE_compile : id -> host_expr
 | HE_instantiate : id -> id -> host_expr
 | HE_host_frame : list value_type -> list host_value -> host_expr -> host_expr
-| HE_wasm_frame : list administrative_instruction -> host_expr
+| HE_wasm_frame: list administrative_instruction -> host_expr
 .
 
 (** std-doc:
