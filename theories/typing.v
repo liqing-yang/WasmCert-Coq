@@ -307,7 +307,7 @@ Definition memi_agree (ms : list memory) (n : nat) (mem_t : memory_type) : bool 
   end.
 
 Definition functions_agree (fs : seq function_closure) (n : nat) (f : function_type) : bool :=
-  (n < length fs) && (option_map cl_type (List.nth_error fs n) == Some f).
+  (n < length fs) && (option_map cl_type (List.nth_error fs n) == Some (Some f)).
 
 (*
   This is the main point where the typing context in the typing system and the 
@@ -488,8 +488,9 @@ Inductive cl_typing : store_record -> function_closure -> function_type -> Prop 
     C' = upd_local_label_return C (tc_local C ++ t1s ++ ts) ([::t2s] ++ tc_label C) (Some t2s) ->
     be_typing C' es (Tf [::] t2s) ->
     cl_typing s (FC_func_native i tf ts es) (Tf t1s t2s)
-  | cl_typing_host : forall s tf h,
-    cl_typing s (FC_func_host tf h) tf
+  | cl_typing_host : forall s htf n tf e,
+    host_function_type_to_wasm htf = Some tf ->
+    cl_typing s (FC_func_host htf n e) tf
   .
 
 (*
@@ -536,15 +537,17 @@ Scheme e_typing_ind' := Induction for e_typing Sort Prop
   with s_typing_ind' := Induction for s_typing Sort Prop.
 
 Definition cl_typing_self (s : store_record) (fc : function_closure) : Prop :=
-  cl_typing s fc (cl_type fc).
+  forall tf, cl_type fc = Some tf ->
+  cl_typing s fc tf.
 
-Lemma cl_typing_unique : forall s cl tf, cl_typing s cl tf -> tf = cl_type cl.
+(* TODO: fix proof *)
+Lemma cl_typing_unique : forall s cl tf, cl_typing s cl tf -> Some tf = cl_type cl.
 Proof.
-  move=> s + tf. case.
+(*  move=> s + tf. case.
   - move => i ts bes t H /=; by inversion H.
-  - move => f h H; by inversion H.
-Qed.
-
+  - move => f h H; by inversion H.*)
+Admitted.
+  
 Definition cl_type_check_single (s:store_record) (f:function_closure):=
   exists tf, cl_typing s f tf.
 

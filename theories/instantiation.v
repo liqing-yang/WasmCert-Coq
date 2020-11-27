@@ -15,7 +15,7 @@ Require Import BinNat.
 (* TODO: separate algorithmic aspects from specification, incl. dependencies *)
 
 (* TODO: get rid of old notation that doesn't follow standard *)
-
+(*
 Section Host.
 
 Variable host_function : eqType.
@@ -896,3 +896,4 @@ Definition interp_instantiate_wrapper :
 
 End Instantiation.
 
+ *)

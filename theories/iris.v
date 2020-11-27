@@ -13,7 +13,7 @@ Require Import operations opsem interpreter.
 
 
 Section Host.
-
+(*
 Variable host_function : eqType.
 
 Let host := host host_function.
@@ -259,6 +259,6 @@ Qed.
 
 Lemma wasm_mixin : LanguageMixin of_val to_val prim_step.
 Proof. split; eauto using to_of_val, of_to_val, val_head_stuck. Qed.
-
+*)
 End Host.
 

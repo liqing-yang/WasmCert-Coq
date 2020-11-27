@@ -7,12 +7,12 @@ From iris.proofmode Require Import tactics.
 From iris.program_logic Require Export weakestpre.
 From iris.base_logic Require Export gen_heap proph_map.
 Require Export iris.
-Require Export datatypes host operations.
+Require Export datatypes operations.
 
 Set Default Proof Using "Type". (* what is this? *)
 
 Close Scope byte_scope.
-
+(*
 Section Host.
 
 Variable host_function : eqType.
@@ -106,3 +106,4 @@ Admitted.
 
 End Host.
 
+ *)

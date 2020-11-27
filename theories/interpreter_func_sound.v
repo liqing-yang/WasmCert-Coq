@@ -11,7 +11,7 @@ Unset Printing Implicit Defensive.
 
 Require Import operations opsem interpreter_func properties.
 
-
+(*
 Section Host.
   
 Hint Constructors reduce_simple : core.
@@ -1253,3 +1253,4 @@ Proof.
 Qed.
 
 End Host.
+ *)

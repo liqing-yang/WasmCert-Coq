@@ -8,7 +8,7 @@ From Wasm Require Export operations typing type_checker datatypes_properties typ
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
-
+(*
 Section Host.
 
 Variable host_function : eqType.
@@ -1510,3 +1510,4 @@ Qed.
 
 End Host.
 
+ *)

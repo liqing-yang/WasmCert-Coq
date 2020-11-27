@@ -13,6 +13,7 @@ Unset Printing Implicit Defensive.
 From Wasm Require Import operations opsem interpreter properties.
 
 
+(*
 Section Host.
 
 Variable host_function : eqType.
@@ -1307,3 +1308,4 @@ Qed.
 
 End Host.
 
+*)

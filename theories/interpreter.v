@@ -6,7 +6,7 @@ From Coq Require Import ZArith.BinInt.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From ExtLib Require Import Structures.Monad.
 From ITree Require Import ITree ITreeFacts.
-From Wasm Require Export operations host.
+From Wasm Require Export operations.
 
 Import Monads.
 Import MonadNotation.
@@ -15,7 +15,7 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 
 Unset Printing Implicit Defensive.
-
+(*
 Section Host.
 
 Local Notation "x <- m1 ; m2" :=
@@ -617,6 +617,5 @@ Definition is_const_list : list administrative_instruction -> option (list value
 Definition itree_to_option (E : Type -> Type) (tr : forall T A, E T -> A) :
     forall R, itree E R -> option R :=
   fun _ tree => option_of_itree_void (translate (fun T => tr T _) tree).
-
 End Interpreter.
-
+*)
