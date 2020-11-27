@@ -183,16 +183,6 @@ Fixpoint is_byte_list (hvs: list host_value) : bool :=
   | hv :: hvs' => if hv is HV_byte _ then is_byte_list hvs' else false
   end.
 
-Fixpoint host_value_to_byte (hv: host_value) : option byte :=
-  match hv with
-  | HV_byte b => Some b
-  | _ => None
-  end.
-
-Fixpoint host_list_byte_extract (hvs: list host_value) : option (list byte) :=
-  let bs := map host_value_to_byte hvs in
-  list_extra.those bs.
-
 (* Due to host's ability to invoke wasm functions and wasm's ability to invoke host
      functions, the opsem is necessarily mutually recursive. *)
 (* TODO: add all the cases *)
@@ -254,18 +244,17 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
   (* TODO: wasm state exprs *)
   (* wasm module expr *)
   | hr_call_host:
-    forall hs s ids cl id i n e tf vs tn tm vars hvs,
+    forall hs s ids cl id i n e htf vs htn htm vars hvs,
       hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       List.nth_error s.(s_funcs) i = Some cl ->
-      cl = FC_func_host tf n e ->
-      tf = HTf tn tm ->
+      cl = FC_func_host htf n e ->
+      htf = HTf htn htm ->
       lookup_host_vars ids hs = Some vars ->
-      tn = map host_typeof vars ->
+      list_host_typeof vars htn ->
       host_reduce hs s hvs (HE_call id ids) hs s hvs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
   | hr_compile:
-    forall hs s hvs id mo hv hbytes,
-      hs id = Some (HV_list hv) ->
-      host_list_byte_extract hv = Some hbytes ->
+    forall hs s hvs id mo hbytes,
+      hs id = Some (HV_bytelist hbytes) ->
       run_parse_module (map byte_of_compcert_byte hbytes) = Some mo -> (* Check: is this correct? *)
       host_reduce hs s hvs (HE_compile id) hs s hvs (HE_value (HV_module mo))
   (* TODO: our current instantiation seems to instantiate to itree -- how do we 

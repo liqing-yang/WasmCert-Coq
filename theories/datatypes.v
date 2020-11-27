@@ -443,7 +443,7 @@ Inductive host_type : Type :=
 | HT_wot : wasm_object_type -> host_type
 | HT_moduleref : host_type
 | HT_record : host_type
-| HT_list : host_type
+| HT_bytelist : host_type
 .
 
 Inductive host_function_type : Type :=
@@ -564,7 +564,8 @@ Inductive host_value : Type :=
 | HV_wov : wasm_object_value -> host_value
 | HV_module : module -> host_value
 | HV_record : list host_value -> host_value
-| HV_list : list host_value -> host_value
+| HV_bytelist : list bytes.byte -> host_value
+| HV_trap : host_value
 .
 
 

@@ -124,6 +124,36 @@ Definition host_wov_typeof (wov: wasm_object_value) : wasm_object_type :=
   | WOV_globalref _ => WOT_globalref
   end.
 
+Inductive host_typeof : host_value -> host_type -> Prop :=
+  | HTO_byte:
+    forall b,
+      host_typeof (HV_byte b) HT_byte
+  | HTO_wasm_value:
+    forall v,
+      host_typeof (HV_wasm_value v) (HT_wt (typeof v))
+  | HTO_wov:
+    forall wov,
+      host_typeof (HV_wov wov) (HT_wot (host_wov_typeof wov))
+  | HTO_module:
+    forall mo,
+      host_typeof (HV_module mo) HT_moduleref
+  | HTO_record:
+    forall r,
+      host_typeof (HV_record r) HT_record
+  | HTO_bytelist:
+    forall bs,
+      host_typeof (HV_bytelist bs) HT_bytelist
+.
+
+Inductive list_host_typeof : list host_value -> list host_type -> Prop :=
+  | HTOS_empty: list_host_typeof [::] [::]
+  | HTOS_cons: forall hv ht hvs hts,
+      host_typeof hv ht ->
+      list_host_typeof hvs hts ->
+      list_host_typeof (hv::hvs) (ht::hts)
+.
+
+(*
 Definition host_typeof (hv : host_value) : host_type :=
   match hv with
   | HV_byte _ => HT_byte
@@ -131,9 +161,10 @@ Definition host_typeof (hv : host_value) : host_type :=
   | HV_wov wov => HT_wot (host_wov_typeof wov)
   | HV_module _ => HT_moduleref
   | HV_record _ => HT_record
-  | HV_list _ => HT_list
+  | HV_bytelist _ => HT_bytelist
+  | HV_trap => 
   end.
-
+*)
 Definition host_value_to_wasm (hv: host_value) : option value :=
   match hv with
   | HV_wasm_value v => Some v
