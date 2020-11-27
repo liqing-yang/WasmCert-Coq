@@ -145,48 +145,9 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
         reduce_simple es [::AI_trap]
 .
 
-(*
-(* TODO: I think this approach here is better, albeit different from the doc - R *)
-Record host_state := {
-  hs_varmap : id -> option host_value;
-  hs_funcs : list host_expr;
-}.
- *)
-
-Definition host_state : Type := id -> option host_value.
-
-Definition lookup_host_vars (vcs : list i32) hs : option (list host_value) :=
-  list_extra.those
-    (List.map
-      (fun i => hs i)
-      vcs).
-
-Definition lookup_host_vars_as_i32s vcs hs : option (list host_value) :=
-  list_extra.those
-    (List.map
-      (fun x =>
-        match x with
-        | VAL_int32 i =>
-          hs i
-        | _ => None
-        end)
-      vcs).
-
-(* TODO: refactor these into datatypes/operations.v accordingly. *)
-Definition empty_instance := Build_instance [::] [::] [::] [::] [::].
-
-Definition empty_frame := Build_frame [::] empty_instance.
-
-Fixpoint is_byte_list (hvs: list host_value) : bool :=
-  match hvs with
-  | [::] => true
-  | hv :: hvs' => if hv is HV_byte _ then is_byte_list hvs' else false
-  end.
-
 (* Due to host's ability to invoke wasm functions and wasm's ability to invoke host
      functions, the opsem is necessarily mutually recursive. *)
 (* TODO: add all the cases *)
-
 Inductive host_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
   (* TODO: basic exprs -- arith ops, list ops left *)
@@ -194,24 +155,40 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
     forall hs s hvs id hv,
       hs id = Some hv ->
       host_reduce hs s hvs (HE_getglobal id) hs s hvs (HE_value hv)
+  | hr_getglobal_trap:
+    forall hs s hvs id,
+      hs id = None ->
+      host_reduce hs s hvs (HE_getglobal id) hs s hvs (HE_value HV_trap)
   | hr_setglobal_reduce:
     forall hs s hvs id e hs' s' hvs' e',
       host_reduce hs s hvs e hs' s' hvs' e' ->
       host_reduce hs s hvs (HE_setglobal id e) hs' s' hvs' (HE_setglobal id e')
   | hr_setglobal_value:
     forall hs s hvs id hv hs',
+      hv <> HV_trap ->
       hs' = (fun idx => if idx == id then (Some hv) else (hs idx)) ->
       host_reduce hs s hvs (HE_setglobal id (HE_value hv)) hs' s hvs (HE_skip)
+  | hr_setglobal_trap:
+    forall hs s hvs id hs',
+      host_reduce hs s hvs (HE_setglobal id (HE_value HV_trap)) hs' s hvs (HE_value HV_trap)
   | hr_getlocal:
     forall hs s hvs n hv,
       List.nth_error hvs (nat_of_N n) = Some hv ->
       host_reduce hs s hvs (HE_getlocal n) hs s hvs (HE_value hv)
+  | hr_getlocal_trap:
+    forall hs s hvs n,
+      List.nth_error hvs (nat_of_N n) = None ->
+      host_reduce hs s hvs (HE_getlocal n) hs s hvs (HE_value HV_trap)
   | hr_setlocal:
     forall hs s hvs n id hvs' hv hvd,
       hs id = Some hv ->
       hvs' = set_nth hvd hvs (nat_of_N n) hv ->
       host_reduce hs s hvs (HE_setlocal n id) hs s hvs' (HE_skip)
-  | hr_if_true: (* TODO: add the case for invalid id, ie. hs(id) = None *)
+  | hr_setlocal_trap:
+    forall hs s hvs n id hvs',
+      hs id = None ->
+      host_reduce hs s hvs (HE_setlocal n id) hs s hvs' (HE_value HV_trap)
+  | hr_if_true:
     forall hs s hvs id e1 e2 hv,
       hs id = Some hv ->
       hv <> HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
@@ -221,6 +198,10 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       hs id = Some hv ->
       hv = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
       host_reduce hs s hvs (HE_if id e1 e2) hs s hvs e2
+  | hr_if_trap: 
+    forall hs s hvs id e1 e2,
+      hs id = None ->
+      host_reduce hs s hvs (HE_if id e1 e2) hs s hvs (HE_value HV_trap)
   | hr_while:
     forall hs s hvs id e,
       host_reduce hs s hvs (HE_while id e) hs s hvs (HE_if id (HE_seq e (HE_while id e)) HE_skip)
@@ -250,7 +231,7 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       cl = FC_func_host htf n e ->
       htf = HTf htn htm ->
       lookup_host_vars ids hs = Some vars ->
-      list_host_typeof vars htn ->
+      list_extra.those (map host_typeof vars) = Some htn ->
       host_reduce hs s hvs (HE_call id ids) hs s hvs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
   | hr_compile:
     forall hs s hvs id mo hbytes,

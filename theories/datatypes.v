@@ -389,9 +389,11 @@ Record instance : Type := (* inst *) {
   inst_funcs : list funcaddr;
   inst_tab : list tableaddr;
   inst_memory : list memaddr;
-  inst_globs : list globaladdr;
+  inst_globs : list globaladdr
   (* TODO: exports field? *)
 }.
+
+Definition empty_instance := Build_instance [::] [::] [::] [::] [::].
 
 (** std-doc:
 Each function element is either empty, representing an uninitialized table
@@ -429,6 +431,8 @@ Record frame : Type := (* f *) {
   f_locs: list value;
   f_inst: instance
 }.
+
+Definition empty_frame := Build_frame [::] empty_instance.
 
 Inductive wasm_object_type : Type :=
 | WOT_funcref : wasm_object_type
@@ -568,6 +572,7 @@ Inductive host_value : Type :=
 | HV_trap : host_value
 .
 
+Definition host_state : Type := id -> option host_value.
 
 (** * Administrative Instructions **)
 

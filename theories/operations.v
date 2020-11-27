@@ -124,47 +124,17 @@ Definition host_wov_typeof (wov: wasm_object_value) : wasm_object_type :=
   | WOV_globalref _ => WOT_globalref
   end.
 
-Inductive host_typeof : host_value -> host_type -> Prop :=
-  | HTO_byte:
-    forall b,
-      host_typeof (HV_byte b) HT_byte
-  | HTO_wasm_value:
-    forall v,
-      host_typeof (HV_wasm_value v) (HT_wt (typeof v))
-  | HTO_wov:
-    forall wov,
-      host_typeof (HV_wov wov) (HT_wot (host_wov_typeof wov))
-  | HTO_module:
-    forall mo,
-      host_typeof (HV_module mo) HT_moduleref
-  | HTO_record:
-    forall r,
-      host_typeof (HV_record r) HT_record
-  | HTO_bytelist:
-    forall bs,
-      host_typeof (HV_bytelist bs) HT_bytelist
-.
-
-Inductive list_host_typeof : list host_value -> list host_type -> Prop :=
-  | HTOS_empty: list_host_typeof [::] [::]
-  | HTOS_cons: forall hv ht hvs hts,
-      host_typeof hv ht ->
-      list_host_typeof hvs hts ->
-      list_host_typeof (hv::hvs) (ht::hts)
-.
-
-(*
-Definition host_typeof (hv : host_value) : host_type :=
+Definition host_typeof (hv : host_value) : option host_type :=
   match hv with
-  | HV_byte _ => HT_byte
-  | HV_wasm_value v => HT_wt (typeof v)
-  | HV_wov wov => HT_wot (host_wov_typeof wov)
-  | HV_module _ => HT_moduleref
-  | HV_record _ => HT_record
-  | HV_bytelist _ => HT_bytelist
-  | HV_trap => 
+  | HV_byte _ => Some HT_byte
+  | HV_wasm_value v => Some (HT_wt (typeof v))
+  | HV_wov wov => Some (HT_wot (host_wov_typeof wov))
+  | HV_module _ => Some HT_moduleref
+  | HV_record _ => Some HT_record
+  | HV_bytelist _ => Some HT_bytelist
+  | HV_trap => None
   end.
-*)
+
 Definition host_value_to_wasm (hv: host_value) : option value :=
   match hv with
   | HV_wasm_value v => Some v
@@ -195,6 +165,23 @@ Definition host_function_type_to_wasm (htf: host_function_type) : option functio
     | None => None
     end
   end.
+
+Definition lookup_host_vars (vcs : list i32) hs : option (list host_value) :=
+  list_extra.those
+    (List.map
+      (fun i => hs i)
+      vcs).
+
+Definition lookup_host_vars_as_i32s vcs hs : option (list host_value) :=
+  list_extra.those
+    (List.map
+      (fun x =>
+        match x with
+        | VAL_int32 i =>
+          hs i
+        | _ => None
+        end)
+      vcs).
 
 Definition option_projl (A B : Type) (x : option (A * B)) : option A :=
   option_map fst x.
