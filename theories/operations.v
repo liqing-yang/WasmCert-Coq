@@ -183,6 +183,29 @@ Definition lookup_host_vars_as_i32s vcs hs : option (list host_value) :=
         end)
       vcs).
 
+Definition upd_host_var (hs: host_state) (id: id) (hv: host_value) :=
+  (fun idx => if idx == id then (Some hv) else (hs idx)).
+
+Fixpoint build_host_kvp (hs: host_state) (kip: list (field_name * id)) :=
+  match kip with
+  | [::] => Some [::]
+  | (f, id) :: kip' =>
+    match hs id with
+    | Some hv =>
+      match build_host_kvp hs kip' with
+      | Some kvp' => Some ((f, hv) :: kvp')
+      | None => None
+      end
+    | None => None
+    end
+  end.
+
+Fixpoint getvalue_kvp (kvp: list (field_name * host_value)) (fname: field_name) :=
+  match kvp with
+  | [::] => None
+  | (f, hv) :: kvp' => if f == fname then Some hv else getvalue_kvp kvp' fname
+  end.
+
 Definition option_projl (A B : Type) (x : option (A * B)) : option A :=
   option_map fst x.
 

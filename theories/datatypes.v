@@ -556,18 +556,15 @@ Definition id : Type := i32.
 
 Definition field_name := name (* TODO: ? *).
 
-Inductive host_arith : Type := (* TODO *) .
+Inductive host_arith : Type := (* TODO *).
 Inductive host_list_op : Type := (* TODO *) .
-Inductive wasm_table_op : Type := (* TODO *) .
-Inductive wasm_memory_op : Type := (* TODO *) .
-Inductive wasm_global_op : Type := (* TODO *) .
 
 Inductive host_value : Type :=
 | HV_byte : bytes.byte -> host_value
 | HV_wasm_value : value -> host_value
 | HV_wov : wasm_object_value -> host_value
 | HV_module : module -> host_value
-| HV_record : list host_value -> host_value
+| HV_record : list (field_name * host_value) -> host_value
 | HV_bytelist : list bytes.byte -> host_value
 | HV_trap : host_value
 .
@@ -597,7 +594,7 @@ Inductive administrative_instruction : Type := (* e *)
 | AI_host_frame : list value_type (* TODO: is that right??? *) -> list host_value -> host_expr -> administrative_instruction
 with host_expr : Type :=
 | HE_value : host_value -> host_expr
-| HE_skip
+| HE_skip : host_expr
 | HE_getglobal : id -> host_expr
 | HE_setglobal : id -> host_expr -> host_expr
 | HE_getlocal : N -> host_expr
@@ -612,9 +609,16 @@ with host_expr : Type :=
 | HE_get_field : id -> field_name -> host_expr
 | HE_new_host_func : host_function_type -> N -> host_expr -> host_expr
 | HE_call : id -> list id -> host_expr
-| HE_wasm_table_op : wasm_table_op -> host_expr
-| HE_wasm_memory_op : wasm_memory_op -> host_expr
-| HE_wasm_global_op : wasm_global_op -> host_expr
+| HE_wasm_table_create : tableinst -> host_expr
+| HE_wasm_table_get : id -> N -> host_expr
+| HE_wasm_table_set : id -> N -> id -> host_expr
+| HE_wasm_global_create : global -> host_expr
+| HE_wasm_global_get : id -> host_expr
+| HE_wasm_global_set : id -> id -> host_expr
+| HE_wasm_memory_create : memory -> host_expr
+| HE_wasm_memory_get : id -> N -> host_expr
+| HE_wasm_memory_set : id -> N -> id -> host_expr
+| HE_wasm_memory_grow : id -> N -> host_expr
 | HE_compile : id -> host_expr
 | HE_instantiate : id -> id -> host_expr
 | HE_host_frame : list value_type -> list host_value -> host_expr -> host_expr
@@ -629,7 +633,7 @@ definitions during execution of the function.
 *)
 Inductive function_closure : Type := (* cl *)
   | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
-  | FC_func_host : host_function_type -> nat -> host_expr (* TODO: check - R *) (* TODO: is that what we want? *) -> function_closure
+  | FC_func_host : host_function_type -> nat -> host_expr (* TODO: check *) -> function_closure
 .
 
 (** std-doc:
