@@ -207,14 +207,11 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       host_reduce hs s hvs (HE_while id e) hs s hvs (HE_if id (HE_seq e (HE_while id e)) HE_skip)
   (* record exprs *)
   | hr_new_rec:
-    forall hs s hvs kip kvp hs' id,
-      hs id = None ->
+    forall hs s hvs kip kvp,
       build_host_kvp hs kip = Some kvp ->
-      hs' = upd_host_var hs id (HV_record kvp) ->
-      host_reduce hs s hvs (HE_new_rec kip) hs' s hvs (HE_value (HV_wasm_value (VAL_int32 id)))
+      host_reduce hs s hvs (HE_new_rec kip) hs s hvs (HE_value (HV_record kvp))
   | hr_new_rec_trap:
-    forall hs s hvs kip hs' id,
-      hs id = None ->
+    forall hs s hvs kip hs',
       build_host_kvp hs kip = None ->
       host_reduce hs s hvs (HE_new_rec kip) hs' s hvs (HE_value HV_trap)
   | hr_getfield:
