@@ -609,13 +609,13 @@ with host_expr : Type :=
 | HE_get_field : id -> field_name -> host_expr
 | HE_new_host_func : host_function_type -> N -> host_expr -> host_expr
 | HE_call : id -> list id -> host_expr
-| HE_wasm_table_create : tableinst -> host_expr
+| HE_wasm_table_create : N -> host_expr
 | HE_wasm_table_get : id -> N -> host_expr
 | HE_wasm_table_set : id -> N -> id -> host_expr
 | HE_wasm_global_create : global -> host_expr
 | HE_wasm_global_get : id -> host_expr
 | HE_wasm_global_set : id -> id -> host_expr
-| HE_wasm_memory_create : memory -> host_expr
+| HE_wasm_memory_create : N -> N -> host_expr
 | HE_wasm_memory_get : id -> N -> host_expr
 | HE_wasm_memory_set : id -> N -> id -> host_expr
 | HE_wasm_memory_grow : id -> N -> host_expr

@@ -107,7 +107,6 @@ Definition wasm_deserialise (bs : bytes) (vt : value_type) : value :=
   | T_f64 => VAL_float64 (Floats.Float.of_bits (Integers.Int64.repr (common.Memdata.decode_int bs)))
   end.
 
-
 Definition typeof (v : value) : value_type :=
   match v with
   | VAL_int32 _ => T_i32
@@ -204,6 +203,19 @@ Fixpoint getvalue_kvp (kvp: list (field_name * host_value)) (fname: field_name) 
   match kvp with
   | [::] => None
   | (f, hv) :: kvp' => if f == fname then Some hv else getvalue_kvp kvp' fname
+  end.
+
+Definition create_table (len: N) : tableinst.
+  (* TODO: check the desired behaviour of create_table and fill in here. *)
+Admitted.
+
+Definition create_memory (sz: N) (sz_lim: N) :=
+  Build_memory (mem_make #00 sz) (Some sz_lim).
+
+Fixpoint make_seq (vs: list host_value) : host_expr :=
+  match vs with
+  | [::] => HE_skip
+  | v :: vs' => HE_seq (HE_value v) (make_seq vs')
   end.
 
 Definition option_projl (A B : Type) (x : option (A * B)) : option A :=
