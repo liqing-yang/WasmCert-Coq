@@ -130,7 +130,7 @@ Definition host_typeof (hv : host_value) : option host_type :=
   | HV_wov wov => Some (HT_wot (host_wov_typeof wov))
   | HV_module _ => Some HT_moduleref
   | HV_record _ => Some HT_record
-  | HV_bytelist _ => Some HT_bytelist
+  | HV_list _ => Some HT_list
   | HV_trap => None
   end.
 
@@ -205,18 +205,23 @@ Fixpoint getvalue_kvp (kvp: list (field_name * host_value)) (fname: field_name) 
   | (f, hv) :: kvp' => if f == fname then Some hv else getvalue_kvp kvp' fname
   end.
 
+Fixpoint to_bytelist (l: seq host_value) : option (seq byte) :=
+  match l with
+  | [::] => Some [::]
+  | (HV_byte b) :: l' =>
+    match to_bytelist l' with
+    | Some bl' => Some (b :: bl')
+    | None => None
+    end
+  | _ => None
+  end.
+
 Definition create_table (len: N) : tableinst.
   (* TODO: check the desired behaviour of create_table and fill in here. *)
 Admitted.
 
 Definition create_memory (sz: N) (sz_lim: N) :=
   Build_memory (mem_make #00 sz) (Some sz_lim).
-
-Fixpoint make_seq (vs: list host_value) : host_expr :=
-  match vs with
-  | [::] => HE_skip
-  | v :: vs' => HE_seq (HE_value v) (make_seq vs')
-  end.
 
 Definition option_projl (A B : Type) (x : option (A * B)) : option A :=
   option_map fst x.
@@ -655,8 +660,6 @@ Definition es_is_trap (es : seq administrative_instruction) : bool :=
   | [::e] => e_is_trap e
   | _ => false
   end.
-
-
 
 (** Converting a result into a stack. **)
 Definition result_to_stack (r : result) :=

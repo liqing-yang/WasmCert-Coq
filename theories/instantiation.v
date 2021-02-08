@@ -25,10 +25,10 @@ Variable host_instance : host.
 
 Let store_record_eq_dec := @store_record_eq_dec host_function.
 Let store_record_eqType := @store_record_eqType host_function.
-
+*)
 (* Before adding a canonical structure to [name], we save the base one to ensure better extraction. *)
 Local Canonical Structure name_eqType := Eval hnf in EqType name (seq_eqMixin _).
-
+(*
 Let store_record := store_record host_function.
 (*Let administrative_instruction := administrative_instruction host_function.*)
 Let host_state := host_state host_instance.
@@ -39,7 +39,7 @@ Let host_event := host_event executable_host_instance.
 
 Context {eff : Type -> Type}.
 Context {eff_has_host_event : host_event -< eff}.
-
+*)
 Let run_v {eff' eff'_has_host_event} :=
   @interpreter.run_v _ executable_host_instance eff' eff'_has_host_event.
 
@@ -896,4 +896,4 @@ Definition interp_instantiate_wrapper :
 
 End Instantiation.
 
- *)
+

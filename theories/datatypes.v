@@ -447,7 +447,8 @@ Inductive host_type : Type :=
 | HT_wot : wasm_object_type -> host_type
 | HT_moduleref : host_type
 | HT_record : host_type
-| HT_bytelist : host_type
+(*| HT_bytelist : host_type*)
+| HT_list : host_type
 .
 
 Inductive host_function_type : Type :=
@@ -565,7 +566,8 @@ Inductive host_value : Type :=
 | HV_wov : wasm_object_value -> host_value
 | HV_module : module -> host_value
 | HV_record : list (field_name * host_value) -> host_value
-| HV_bytelist : list bytes.byte -> host_value
+(*| HV_bytelist : list bytes.byte -> host_value*)
+| HV_list: list host_value -> host_value
 | HV_trap : host_value
 .
 
@@ -594,7 +596,6 @@ Inductive administrative_instruction : Type := (* e *)
 | AI_host_frame : list value_type (* TODO: is that right??? *) -> list host_value -> host_expr -> administrative_instruction
 with host_expr : Type :=
 | HE_value : host_value -> host_expr
-| HE_skip : host_expr
 | HE_getglobal : id -> host_expr
 | HE_setglobal : id -> host_expr -> host_expr
 | HE_getlocal : N -> host_expr

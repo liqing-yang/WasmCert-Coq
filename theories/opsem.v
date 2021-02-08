@@ -145,6 +145,11 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
         reduce_simple es [::AI_trap]
 .
 
+Print value.
+
+Print i32.
+Print Wasm_int.
+
 (* Due to host's ability to invoke wasm functions and wasm's ability to invoke host
      functions, the opsem is necessarily mutually recursive. *)
 (* TODO: add all the cases *)
@@ -167,7 +172,7 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
     forall hs s locs id hv hs',
       hv <> HV_trap ->
       hs' = upd_host_var hs id hv ->
-      host_reduce hs s locs (HE_setglobal id (HE_value hv)) hs' s locs (HE_skip)
+      host_reduce hs s locs (HE_setglobal id (HE_value hv)) hs' s locs (HE_value hv)
   | hr_setglobal_trap:
     forall hs s locs id,
       host_reduce hs s locs (HE_setglobal id (HE_value HV_trap)) hs s locs (HE_value HV_trap)
@@ -184,7 +189,7 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       hs id = Some hv ->
       (nat_of_N n) < length locs ->
       locs' = set_nth hvd locs (nat_of_N n) hv ->
-      host_reduce hs s locs (HE_setlocal n id) hs s locs' (HE_skip)
+      host_reduce hs s locs (HE_setlocal n id) hs s locs' (HE_value hv)
   | hr_setlocal_trap1:
     forall hs s locs n id locs',
       hs id = None ->
@@ -210,7 +215,7 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       host_reduce hs s locs (HE_if id e1 e2) hs s locs (HE_value HV_trap)
   | hr_while:
     forall hs s locs id e,
-      host_reduce hs s locs (HE_while id e) hs s locs (HE_if id (HE_seq e (HE_while id e)) HE_skip)
+      host_reduce hs s locs (HE_while id e) hs s locs (HE_if id (HE_seq e (HE_while id e)) (HE_value (HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)))))
   (* record exprs *)
   | hr_new_rec:
     forall hs s locs kip kvp,
@@ -283,7 +288,7 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       hs id = Some (HV_wov (WOV_funcref (Mk_funcidx fn))) ->
       tab' = {|table_data := set_nth hvd tab.(table_data) n (Some fn); table_max_opt := tab.(table_max_opt) |} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := set_nth tabd s.(s_tables) tn tab'; s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
-      host_reduce hs s locs (HE_wasm_table_set idt (N_of_nat n) id) hs s' locs HE_skip
+      host_reduce hs s locs (HE_wasm_table_set idt (N_of_nat n) id) hs s' locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx fn))))
   | hr_table_get:
     forall hs s locs idt n tn tab fn,
       hs idt = Some (HV_wov (WOV_tableref (Mk_tableidx tn))) ->
@@ -303,7 +308,7 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       memory_list.mem_update n b m.(mem_data) = Some md' ->
       m' = {|mem_data := md'; mem_max_opt := m.(mem_max_opt) |} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := set_nth memd s.(s_mems) mn m'; s_globals := s.(s_globals) |} ->
-      host_reduce hs s locs (HE_wasm_memory_set idm (N_of_nat n) id) hs s' locs HE_skip
+      host_reduce hs s locs (HE_wasm_memory_set idm (N_of_nat n) id) hs s' locs (HE_value (HV_byte b))
   | hr_memory_get:
     forall hs s locs idm n b m mn,
       hs idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
@@ -316,7 +321,7 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       List.nth_error s.(s_mems) mn = Some m ->
       mem_grow m n = Some m' ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := set_nth memd s.(s_mems) mn m'; s_globals := s.(s_globals) |} ->
-      host_reduce hs s locs (HE_wasm_memory_grow idm (N_of_nat n)) hs s' locs HE_skip
+      host_reduce hs s locs (HE_wasm_memory_grow idm (N_of_nat n)) hs s' locs (HE_value (HV_wasm_value (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N (mem_size m'))))))
   | hr_globals_create:
     forall hs s locs s' g n,
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) ++ [::g] |} ->
@@ -324,12 +329,14 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       host_reduce hs s locs (HE_wasm_global_create g) hs s' locs (HE_value (HV_wov (WOV_globalref (Mk_globalidx n))))
   | hr_global_set:
     forall hs s locs gn idg id s' v g g' gd,
+      hs id = Some (HV_wasm_value v) ->
       hs idg = Some (HV_wov (WOV_globalref (Mk_globalidx gn))) ->
       List.nth_error s.(s_globals) gn = Some g ->
       g.(g_mut) = MUT_mut ->
+      typeof v = typeof (g.(g_val)) ->
       g' = {|g_mut := MUT_mut; g_val := v|} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := set_nth gd s.(s_globals) gn g'|} ->
-      host_reduce hs s locs (HE_wasm_global_set idg id) hs s' locs HE_skip
+      host_reduce hs s locs (HE_wasm_global_set idg id) hs s' locs (HE_value (HV_wasm_value v))
   | hr_global_get:
     forall hs s locs idg g gn v,
       hs idg = Some (HV_wov (WOV_globalref (Mk_globalidx gn))) ->
@@ -337,8 +344,9 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       host_reduce hs s locs (HE_wasm_global_get idg) hs s locs (HE_value (HV_wasm_value v))
   (* wasm module expr *)
   | hr_compile:
-    forall hs s locs id mo hbytes,
-      hs id = Some (HV_bytelist hbytes) ->
+    forall hs s locs id mo hvl hbytes,
+      hs id = Some (HV_list hvl) ->
+      to_bytelist hvl = Some hbytes ->
       run_parse_module (map byte_of_compcert_byte hbytes) = Some mo -> (* Check: is this correct? *)
       host_reduce hs s locs (HE_compile id) hs s locs (HE_value (HV_module mo))
   (* TODO: replace the proxy *)
@@ -348,9 +356,9 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       hs idr = Some (HV_record r) ->
       host_reduce hs s locs (HE_instantiate idm idr) hs s locs rec
   (* miscellaneous *)
-  | hr_seq_skip:
-    forall hs s locs e,
-      host_reduce hs s locs (HE_seq HE_skip e) hs s locs e
+  | hr_seq_const:
+    forall hs s locs v e,
+      host_reduce hs s locs (HE_seq (HE_value v) e) hs s locs e
   | hr_seq_fst:
     forall hs s locs e1 e2 hs' s' locs' e1',
       host_reduce hs s locs e1 hs' s' locs' e1' ->
@@ -367,11 +375,10 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
     forall hs s locs e hs' s' locs' e' locsf tn,
       host_reduce hs s locs e hs' s' locs' e' ->
       host_reduce hs s locsf (HE_host_frame tn locs e) hs' s' locsf (HE_host_frame tn locs' e')
-  (* TODO: This is a very bad representation of list of values, but after the removal of general lists we no longer have an alternative *)
   | hr_host_return:
     forall hs s locsf locs ids e vs tn,
       lookup_host_vars ids hs = Some vs ->
-      host_reduce hs s locsf (HE_host_frame tn locs (HE_seq (HE_return ids) e)) hs s locsf (make_seq vs)            
+      host_reduce hs s locsf (HE_host_frame tn locs (HE_seq (HE_return ids) e)) hs s locsf (HE_value (HV_list vs))
    
 
 (* TODO: needs all the host_expr reduction steps: compile, instantiate, etc. *)
