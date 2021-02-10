@@ -369,8 +369,14 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       host_reduce hs s locs (HE_seq (HE_value v) e) hs' s' locs' (HE_seq (HE_value v) e')
   | hr_wasm_step:
     forall hs s s' locs we we',
-      reduce hs s empty_frame we hs s empty_frame we' ->
+      reduce hs s empty_frame we hs s' empty_frame we' ->
       host_reduce hs s locs (HE_wasm_frame we) hs s' locs (HE_wasm_frame we')
+  | hr_wasm_return:
+    forall hs s locs vs,      
+      host_reduce hs s locs (HE_wasm_frame (v_to_e_list vs)) hs s locs (HE_value (HV_list (map (fun wv => (HV_wasm_value wv)) vs)))
+  | hr_wasm_return_trap:
+      forall hs s locs,
+      host_reduce hs s locs (HE_wasm_frame ([::AI_trap])) hs s locs (HE_value (HV_trap))
   | hr_host_step:
     forall hs s locs e hs' s' locs' e' locsf tn,
       host_reduce hs s locs e hs' s' locs' e' ->
