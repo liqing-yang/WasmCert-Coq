@@ -152,19 +152,6 @@ Definition host_type_to_wasm (hvt: host_type) : option value_type :=
 Definition list_host_type_to_wasm (hvts: list host_type) : option (list value_type) :=
   list_extra.those (map host_type_to_wasm hvts).
 
-Definition host_function_type_to_wasm (htf: host_function_type) : option function_type :=
-  match htf with
-  | HTf htn htm =>
-    match (list_host_type_to_wasm htn) with
-    | Some tn =>
-      match (list_host_type_to_wasm htm) with
-      | Some tm => Some (Tf tn tm)
-      | None => None
-      end
-    | None => None
-    end
-  end.
-
 Definition lookup_host_vars (vcs : list i32) hs : option (list host_value) :=
   list_extra.those
     (List.map
@@ -216,12 +203,21 @@ Fixpoint to_bytelist (l: seq host_value) : option (seq byte) :=
   | _ => None
   end.
 
-Definition create_table (len: N) : tableinst.
-  (* TODO: check the desired behaviour of create_table and fill in here. *)
-Admitted.
+Definition create_table (len: N) : tableinst :=
+  Build_tableinst (List.repeat None len) (Some len).
 
 Definition create_memory (sz: N) (sz_lim: N) :=
   Build_memory (mem_make #00 sz) (Some sz_lim).
+
+Definition is_funcref (v: host_value) :=
+  match v with
+  | HV_wov wov =>
+    match wov with
+    | WOV_funcref _ => true
+    | _ => false
+    end
+  | _ => false
+  end.
 
 Definition option_projl (A B : Type) (x : option (A * B)) : option A :=
   option_map fst x.
@@ -446,7 +442,7 @@ Definition types_agree (t : value_type) (v : value) : bool :=
 Definition cl_type (cl : function_closure) : option function_type :=
   match cl with
   | FC_func_native _ tf _ _ => Some tf
-  | FC_func_host htf _ _ => host_function_type_to_wasm htf
+  | FC_func_host tf _ _ => Some tf
   end.
 
 Definition rglob_is_mut (g : global) : bool :=

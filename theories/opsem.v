@@ -145,11 +145,6 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
         reduce_simple es [::AI_trap]
 .
 
-Print value.
-
-Print i32.
-Print Wasm_int.
-
 (* Due to host's ability to invoke wasm functions and wasm's ability to invoke host
      functions, the opsem is necessarily mutually recursive. *)
 (* TODO: add all the cases *)
@@ -191,14 +186,14 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       locs' = set_nth hvd locs (nat_of_N n) hv ->
       host_reduce hs s locs (HE_setlocal n id) hs s locs' (HE_value hv)
   | hr_setlocal_trap1:
-    forall hs s locs n id locs',
+    forall hs s locs n id,
       hs id = None ->
-      host_reduce hs s locs (HE_setlocal n id) hs s locs' (HE_value HV_trap)
+      host_reduce hs s locs (HE_setlocal n id) hs s locs (HE_value HV_trap)
   | hr_setlocal_trap2:
-    forall hs s locs n id locs' hv,
+    forall hs s locs n id hv,
       hs id = Some hv ->
       (nat_of_N n) >= length locs ->
-      host_reduce hs s locs (HE_setlocal n id) hs s locs' (HE_value HV_trap)
+      host_reduce hs s locs (HE_setlocal n id) hs s locs (HE_value HV_trap)
   | hr_if_true:
     forall hs s locs id e1 e2 hv,
       hs id = Some hv ->
@@ -222,9 +217,9 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       build_host_kvp hs kip = Some kvp ->
       host_reduce hs s locs (HE_new_rec kip) hs s locs (HE_value (HV_record kvp))
   | hr_new_rec_trap:
-    forall hs s locs kip hs',
+    forall hs s locs kip,
       build_host_kvp hs kip = None ->
-      host_reduce hs s locs (HE_new_rec kip) hs' s locs (HE_value HV_trap)
+      host_reduce hs s locs (HE_new_rec kip) hs s locs (HE_value HV_trap)
   | hr_getfield:
     forall hs s locs id fname kvp hv,
       hs id = Some (HV_record kvp) ->
@@ -260,35 +255,69 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       list_host_value_to_wasm vars = Some vs ->
       tn = map typeof vs ->
       host_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
-  | hr_call_wasm_trap1:
+  | hr_call_trap1:
     forall hs s locs id ids,
       hs id = None ->
       host_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)
-  (* TODO: add the other trap cases for call functions *)
-  | hr_call_host:
-    forall hs s ids cl id i n e htf vs htn htm vars locs,
+  | hr_call_trap2:
+    forall hs s locs id ids v,
+      hs id = Some v ->
+      is_funcref v = false ->
+      host_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)
+  | hr_call_trap3:
+    forall hs s locs id ids i,
+      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      List.nth_error s.(s_funcs) i = None ->
+      host_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
+  | hr_call_trap4:
+    forall hs s locs id ids,
+      lookup_host_vars ids hs = None ->
+      host_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)
+  | hr_call_wasm_trap1:
+    forall hs s locs id ids i cl j tf vts bes vars tn tm,
       hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       List.nth_error s.(s_funcs) i = Some cl ->
-      cl = FC_func_host htf n e ->
-      htf = HTf htn htm ->
+      cl = FC_func_native j tf vts bes ->
+      tf = Tf tn tm ->
       lookup_host_vars ids hs = Some vars ->
-      list_extra.those (map host_typeof vars) = Some htn ->
+      list_host_value_to_wasm vars = None ->
+      host_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
+  | hr_call_wasm_trap2:
+    forall hs s locs id ids i cl j tf vts bes vars tn tm vs,
+      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      List.nth_error s.(s_funcs) i = Some cl ->
+      cl = FC_func_native j tf vts bes ->
+      tf = Tf tn tm ->
+      lookup_host_vars ids hs = Some vars ->
+      list_host_value_to_wasm vars = Some vs ->
+      tn <> map typeof vs ->
+      host_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
+  | hr_call_host:
+    forall hs s ids cl id i n e tf tn tm vars vs locs,
+      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      List.nth_error s.(s_funcs) i = Some cl ->
+      cl = FC_func_host tf n e ->
+      tf = Tf tn tm ->
+      lookup_host_vars ids hs = Some vars ->
+      list_host_value_to_wasm vars = Some vs -> (* TODO: change this to explicit casts, then add a trap case. *)
+      tn = map typeof vs ->
       host_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
   (* wasm state exprs *)
-  (* TODO: check the desired behaviour of table create *)
   | hr_table_create:
-    forall hs s locs s' len n,
-      s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables) ++ [::create_table len]; s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
+    forall hs s locs s' tab len n,
+      tab = create_table len ->
+      s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables) ++ [::tab]; s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
       n = length s.(s_tables) ->
       host_reduce hs s locs (HE_wasm_table_create len) hs s' locs (HE_value (HV_wov (WOV_tableref (Mk_tableidx n))))
   | hr_table_set:
-    forall hs s locs idt n id tn tab tab' s' tabd fn hvd,
+    forall hs s locs idt n id v tn tab tab' s' tabd fn hvd,
       hs idt = Some (HV_wov (WOV_tableref (Mk_tableidx tn))) ->
       List.nth_error s.(s_tables) tn = Some tab ->
-      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx fn))) ->
+      hs id = Some v ->
+      v = HV_wov (WOV_funcref (Mk_funcidx fn)) ->
       tab' = {|table_data := set_nth hvd tab.(table_data) n (Some fn); table_max_opt := tab.(table_max_opt) |} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := set_nth tabd s.(s_tables) tn tab'; s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
-      host_reduce hs s locs (HE_wasm_table_set idt (N_of_nat n) id) hs s' locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx fn))))
+      host_reduce hs s locs (HE_wasm_table_set idt (N_of_nat n) id) hs s' locs (HE_value v)
   | hr_table_get:
     forall hs s locs idt n tn tab fn,
       hs idt = Some (HV_wov (WOV_tableref (Mk_tableidx tn))) ->
@@ -359,14 +388,10 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
   | hr_seq_const:
     forall hs s locs v e,
       host_reduce hs s locs (HE_seq (HE_value v) e) hs s locs e
-  | hr_seq_fst:
+  | hr_seq:
     forall hs s locs e1 e2 hs' s' locs' e1',
       host_reduce hs s locs e1 hs' s' locs' e1' ->
       host_reduce hs s locs (HE_seq e1 e2) hs' s' locs' (HE_seq e1' e2)
-  | hr_seq_snd:
-    forall hs s locs v e hs' s' locs' e',
-      host_reduce hs s locs e hs' s' locs' e' ->
-      host_reduce hs s locs (HE_seq (HE_value v) e) hs' s' locs' (HE_seq (HE_value v) e')
   | hr_wasm_step:
     forall hs s s' locs we we',
       reduce hs s empty_frame we hs s' empty_frame we' ->
@@ -435,10 +460,10 @@ with reduce : host_state -> store_record -> frame -> list administrative_instruc
   | r_invoke_host :
     (* TODO: check *)
     (* TODO: check - R *)  
-    forall a cl e htf t1s t2s ves vcs m n s s' f hs hs' vs,
+    forall a cl e tf t1s t2s ves vcs m n s s' f hs hs' vs,
       List.nth_error s.(s_funcs) a = Some cl ->
-      cl = FC_func_host htf n e ->
-      host_function_type_to_wasm htf = Some (Tf t1s t2s) ->
+      cl = FC_func_host tf n e ->
+      tf = Tf t1s t2s ->
       ves = v_to_e_list vcs ->
       length vcs = n ->
       length t1s = n ->

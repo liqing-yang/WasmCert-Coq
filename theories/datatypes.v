@@ -451,9 +451,6 @@ Inductive host_type : Type :=
 | HT_list : host_type
 .
 
-Inductive host_function_type : Type :=
-| HTf : list host_type -> list host_type -> host_function_type.
-
 Inductive wasm_object_value : Type :=
 | WOV_funcref : funcidx -> wasm_object_value
 | WOV_tableref : tableidx -> wasm_object_value
@@ -608,7 +605,7 @@ with host_expr : Type :=
 | HE_return : list id -> host_expr
 | HE_new_rec : list (field_name * id) -> host_expr
 | HE_get_field : id -> field_name -> host_expr
-| HE_new_host_func : host_function_type -> N -> host_expr -> host_expr
+| HE_new_host_func : function_type -> N -> host_expr -> host_expr
 | HE_call : id -> list id -> host_expr
 | HE_wasm_table_create : N -> host_expr
 | HE_wasm_table_get : id -> N -> host_expr
@@ -634,7 +631,7 @@ definitions during execution of the function.
 *)
 Inductive function_closure : Type := (* cl *)
   | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
-  | FC_func_host : host_function_type -> nat -> host_expr (* TODO: check *) -> function_closure
+  | FC_func_host : function_type -> nat -> host_expr (* TODO: check *) -> function_closure
 .
 
 (** std-doc:
