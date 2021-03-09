@@ -147,7 +147,6 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
 
 (* Due to host's ability to invoke wasm functions and wasm's ability to invoke host
      functions, the opsem is necessarily mutually recursive. *)
-(* TODO: add all the cases *)
 Inductive host_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
   (* TODO: basic exprs -- arith ops, list ops left *)
@@ -322,7 +321,7 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
     forall hs s locs idt n tn tab fn,
       hs idt = Some (HV_wov (WOV_tableref (Mk_tableidx tn))) ->
       List.nth_error s.(s_tables) tn = Some tab ->
-      List.nth_error tab.(table_data) n = Some fn ->
+      List.nth_error tab.(table_data) n = Some (Some fn) ->
       host_reduce hs s locs (HE_wasm_table_get idt (N_of_nat n)) hs s locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx fn))))
   | hr_memory_create:
     forall hs s locs s' sz sz_lim n,
@@ -337,20 +336,20 @@ Inductive host_reduce : host_state -> store_record -> list host_value -> host_ex
       memory_list.mem_update n b m.(mem_data) = Some md' ->
       m' = {|mem_data := md'; mem_max_opt := m.(mem_max_opt) |} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := set_nth memd s.(s_mems) mn m'; s_globals := s.(s_globals) |} ->
-      host_reduce hs s locs (HE_wasm_memory_set idm (N_of_nat n) id) hs s' locs (HE_value (HV_byte b))
+      host_reduce hs s locs (HE_wasm_memory_set idm n id) hs s' locs (HE_value (HV_byte b))
   | hr_memory_get:
     forall hs s locs idm n b m mn,
       hs idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
       List.nth_error s.(s_mems) mn = Some m ->
       memory_list.mem_lookup n m.(mem_data) = Some b ->
-      host_reduce hs s locs (HE_wasm_memory_get idm (N_of_nat n)) hs s locs (HE_value (HV_byte b))
+      host_reduce hs s locs (HE_wasm_memory_get idm n) hs s locs (HE_value (HV_byte b))
   | hr_memory_grow:
     forall hs s s' locs idm n m m' mn memd,
       hs idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
       List.nth_error s.(s_mems) mn = Some m ->
       mem_grow m n = Some m' ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := set_nth memd s.(s_mems) mn m'; s_globals := s.(s_globals) |} ->
-      host_reduce hs s locs (HE_wasm_memory_grow idm (N_of_nat n)) hs s' locs (HE_value (HV_wasm_value (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N (mem_size m'))))))
+      host_reduce hs s locs (HE_wasm_memory_grow idm n) hs s' locs (HE_value (HV_wasm_value (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N (mem_size m'))))))
   | hr_globals_create:
     forall hs s locs s' g n,
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) ++ [::g] |} ->
@@ -585,14 +584,14 @@ with reduce : host_state -> store_record -> frame -> list administrative_instruc
         smem_ind s f.(f_inst) = Some i ->
         List.nth_error s.(s_mems) i = Some m ->
         mem_size m = n ->
-        reduce hs s f [::AI_basic (BI_current_memory)] hs s f [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat n))))]
+        reduce hs s f [::AI_basic (BI_current_memory)] hs s f [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N n))))]
   | r_grow_memory_success :
     forall s i f m n mem' c hs,
       smem_ind s f.(f_inst) = Some i ->
       List.nth_error s.(s_mems) i = Some m ->
       mem_size m = n ->
       mem_grow m (Wasm_int.N_of_uint i32m c) = Some mem' ->
-      reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic BI_grow_memory] hs (upd_s_mem s (update_list_at s.(s_mems) i mem')) f [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat n))))]
+      reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic BI_grow_memory] hs (upd_s_mem s (update_list_at s.(s_mems) i mem')) f [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N n))))]
   | r_grow_memory_failure :
       forall i f m n s c hs,
         smem_ind s f.(f_inst) = Some i ->
