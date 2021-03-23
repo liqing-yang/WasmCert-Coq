@@ -26,7 +26,7 @@ Fixpoint to_val (e : expr) : option val :=
   end.
 
 (*
-  Identical to host_reduce in opsem.v, but with the 4 rules that are covered in Ectx removed
+  Identical to host_reduce in opsem.v, but with the 3 rules relating to Ectx removed
 *)
 Inductive pure_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
@@ -552,7 +552,14 @@ Proof.
   inversion HR as [hs s locs e0 hs' s' locs' e0' H]; subst. clear HR.
   destruct Ki; simpl in H; inversion H; subst => //=; try by eauto.
 Admitted.
-  
+
+Lemma wasm_mixin: LanguageMixin of_val to_val head_step.
+Proof.
+  split => //.
+  - by apply of_to_val.
+  - by apply head_step_not_val.
+Qed.
+
 Lemma wasm_mixin : EctxiLanguageMixin of_val to_val fill_item head_step.
 Proof.
   split => //.
@@ -577,7 +584,7 @@ Canonical Structure wasm_ectx_lang := EctxLanguageOfEctxi wasm_ectxi_lang.
 Canonical Structure wasm_lang := LanguageOfEctx wasm_ectx_lang.
 
 
-(* Copied without thoughts. But it looks like we need to prove a spec for each reduction
+(* Copied without thoughts for now. But it looks like we need to prove a spec for each reduction
      (like a triple for each reduction ). *)
 
 From stdpp Require Import fin_maps.
