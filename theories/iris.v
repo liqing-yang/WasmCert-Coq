@@ -4,7 +4,7 @@
 From mathcomp Require Import ssreflect ssrbool eqtype seq.
 
 (* There is seemingly a conflict between ssrnat and Iris language. *)
-From iris.program_logic Require Import language ectx_language ectxi_language.
+From iris.program_logic Require Import language.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -480,24 +480,6 @@ Proof.
   move => H. by inversion H.
 Qed.
 
-Inductive ectx_item := (* what items do we need exactly? *)
-  (* Host/Wasm frame. But do we need the Label case in Wasm to be here as well?? *)
-| Ectx_setglobal : id -> ectx_item
-| Ectx_seq : expr -> ectx_item
-(*| Ectx_wasm_frame: list administrative_instruction -> ectx_item*)
-| Ectx_host_frame: list value_type -> list host_value -> ectx_item
-.
-
-Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
-  match Ki with
-  | Ectx_setglobal id => HE_setglobal id e
-  | Ectx_seq e' => HE_seq e' e
-  (* There's currently a problem with this one -- the expression within context, we, is not
-     a general expression of type expr. Maybe this should not be a context? 
-  | Ectx_wasm_frame we => HE_wasm_frame we*)
-  | Ectx_host_frame tf locs => HE_host_frame tf locs e
-  end.
-
 Lemma head_step_not_val: forall e1 σ1 κ e2 σ2 efs,
   head_step e1 σ1 κ e2 σ2 efs ->
   to_val e1 = None.
@@ -508,84 +490,15 @@ Proof.
   by inversion H.
 Qed.
 
-Lemma fill_val: forall Ki e,
-  is_Some (to_val (fill_item Ki e)) -> is_Some (to_val e).
-Proof.
-  move => Ki e H.
-  destruct H as [v He].
-  by destruct Ki; inversion He.
-Qed.
-  
-Lemma fill_inj: forall Ki,
-  Inj eq eq (fill_item Ki).
-Proof.
-  unfold Inj.
-  move => Ki x y Himage.
-  by destruct Ki; inversion Himage.
-Qed.
-
-Lemma fill_expr_inj: forall Ki1 Ki2 e1 e2,
-  to_val e1 = None ->
-  to_val e2 = None ->
-  fill_item Ki1 e1 = fill_item Ki2 e2 ->
-  Ki1 = Ki2.
-Proof.
-  move => Ki1 Ki2 e1 e2 Hv1 Hv2 Himage.
-  by destruct Ki1; destruct Ki2; inversion Himage.
-Qed.
-
-(* For this one to hold, all the reductions related to propagating within evaluation contexts
-     needs to be removed from head_step. 
-   However, note that this is currently not true with how we want to return from a host frame:
-     we require an explicit instruction HE_return to return from the context, while this property
-     seems to require that the only case where evaluation contexts could be further reduced
-     should be the case where the expression in the context is already a value.
-   Another rule that violates this property is the reduction of (SEQ v e) -> e. Is this already
-     included in how Iris deals with evaluation contexts, though? If yes then there's no problem.
-*)
-Lemma head_step_return_val: forall Ki e σ1 κ e2 σ2 efs,
-  head_step (fill_item Ki e) σ1 κ e2 σ2 efs ->
-  is_Some (to_val e).
-Proof.
-  move => Ki e σ1 κ e2 σ2 efs H.
-  destruct H as [HR _].
-  inversion HR as [hs s locs e0 hs' s' locs' e0' H]; subst. clear HR.
-  destruct Ki; simpl in H; inversion H; subst => //=; try by eauto.
-Admitted.
-
-Lemma wasm_mixin: LanguageMixin of_val to_val head_step.
+Lemma wasm_mixin : LanguageMixin of_val to_val head_step.
 Proof.
   split => //.
   - by apply of_to_val.
   - by apply head_step_not_val.
 Qed.
 
-Lemma wasm_mixin : EctxiLanguageMixin of_val to_val fill_item head_step.
-Proof.
-  split => //.
-  - by apply of_to_val.
-  - by apply head_step_not_val.
-  - by apply fill_val.
-  - by apply fill_inj.
-  - by apply fill_expr_inj.
-  - by apply head_step_return_val. (* This one is currently not true. *)
-  
-  (* So seems like this is what we need to do:
-     - Define the values/expressions of the language, and the conversions (of_val, to_val);
-     - Define the evaluation contexts (extx_item, fill_item);
-     - Define the opsem of the language, but this is now without the cases for evaluation 
-         contexts (because Iris want to handle those separately? )
-     - Prove that what we defined above for this EctxiLanguagemixin 
-         satisfy certain properties (7 of them here, seemingly). *)
-Admitted.
-
-Canonical Structure wasm_ectxi_lang := EctxiLanguage wasm_mixin.
-Canonical Structure wasm_ectx_lang := EctxLanguageOfEctxi wasm_ectxi_lang.
-Canonical Structure wasm_lang := LanguageOfEctx wasm_ectx_lang.
-
-
-(* Copied without thoughts for now. But it looks like we need to prove a spec for each reduction
-     (like a triple for each reduction ). *)
+(* binary parser also has a Language definition. *)
+Canonical Structure wasm_lang := language.Language wasm_mixin.
 
 From stdpp Require Import fin_maps.
 From iris.proofmode Require Import tactics.
@@ -593,8 +506,6 @@ From iris.algebra Require Import auth gmap.
 From iris.bi.lib Require Import fractional.
 From iris.base_logic.lib Require Export gen_heap proph_map.
 From iris.program_logic Require Export weakestpre total_weakestpre.
-From iris.program_logic Require Import ectx_lifting total_ectx_lifting.
-
 
 From iris.heap_lang Require Import locations.
 
@@ -606,36 +517,16 @@ Class heapG Σ := HeapG {
   heapG_proph_mapG :> proph_mapG proph_id (val * val) Σ;
 }.
 
-(*
-(* TODO: this is a dummy definition that only takes globals into account *)
-Definition pmap_of_store_record (σ : store_record) : pmap.Pmap (option val).
-refine (list_extra.fold_lefti _ σ.(s_globals) _).
-{ move => i pm glob.
-  apply: pmap.Pmerge.
-  apply: (fun x y =>
-    match (x, y) with
-    | (None, None) => None
-    | (Some xx, _) => Some xx
-    | (_, Some yy) => Some yy
-    end).
-  apply: pm.
-  pose v := Some (cons glob.(g_val) nil).
-  refine (@pmap.PMap _ (@pmap.Psingleton_raw _ (Pos.of_succ_nat i) v) _).
-  apply: pmap.Psingleton_wf.
-}
-{ apply: pmap.Pempty. }
+Definition gmap_of_state (σ : state) : gmap loc (option val) .
+Proof.
+  destruct σ as [[hs s] locs].
+  refine (gmap_empty). (* need to somehow convert host_state to a gmap -- should be trivial? *)
 Defined.
-
-Definition gmap_of_store_record (σ : store_record) : gmap loc (option val) :=
-  list_extra.fold_lefti
-    (λ (i : nat) (pm : gmap loc (option val)) (glob : global),
-       map_insert {| loc_car := Z.of_nat i |} (Some [g_val glob]) pm)
-    (s_globals σ) ∅.
-
+  
 Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
   iris_invG := heapG_invG;
   state_interp σ κs _ :=
-    gen_heap_ctx (gmap_of_store_record σ);
+    gen_heap_ctx (gmap_of_state σ);
   fork_post z := True%I;
 }.
 
@@ -718,5 +609,5 @@ Proof.
 Qed.
 
 End lifting.
-*)
+
 
