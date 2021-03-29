@@ -3,7 +3,8 @@
 
 From mathcomp Require Import ssreflect ssrbool eqtype seq.
 
-(* There is seemingly a conflict between ssrnat and Iris language. *)
+(* There is a conflict between ssrnat and Iris language. *)
+(* Also a conflict between ssrnat and stdpp on the notation .* *)
 From iris.program_logic Require Import language.
 
 Set Implicit Arguments.
@@ -12,8 +13,19 @@ Unset Printing Implicit Defensive.
 
 Require Import operations datatypes opsem interpreter binary_format_parser.
 
+From stdpp Require Import fin_maps pmap gmap.
+From iris.proofmode Require Import tactics.
+From iris.algebra Require Import auth.
+From iris.bi.lib Require Import fractional.
+From iris.base_logic.lib Require Export gen_heap proph_map.
+From iris.program_logic Require Export weakestpre total_weakestpre.
+
+From iris.heap_lang Require Import locations.
+
 Definition expr := host_expr.
 Definition val := host_value.
+(* We have to overwrite the definition here for Iris's usage of gmap for heaps. *)
+Definition host_state := gmap loc (option val).
 Definition state : Type := host_state * store_record * (list host_value).
 Definition observation := unit. (* TODO: ??? *)
 
@@ -25,24 +37,23 @@ Fixpoint to_val (e : expr) : option val :=
   | _ => None
   end.
 
-(*
-  Identical to host_reduce in opsem.v, but with the 3 rules relating to Ectx removed
-*)
+Set Typeclasses Debug.
+
 Inductive pure_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
   (* TODO: basic exprs -- arith ops, list ops left *)
   | pr_getglobal:
-    forall hs s locs id hv,
-      hs id = Some hv ->
+    forall hs s locs id hv hv2,
+      hs !! id = Some hv ->
       pure_reduce hs s locs (HE_getglobal id) hs s locs (HE_value hv)
   | pr_getglobal_trap:
     forall hs s locs id,
-      hs id = None ->
+      hs !! id = None ->
       pure_reduce hs s locs (HE_getglobal id) hs s locs (HE_value HV_trap)
   | pr_setglobal_value:
     forall hs s locs id hv hs',
       hv <> HV_trap ->
-      hs' = upd_host_var hs id hv ->
+      hs' = <[id := Some hv]> hs ->
       pure_reduce hs s locs (HE_setglobal id (HE_value hv)) hs' s locs (HE_value hv)
   | pr_setglobal_trap:
     forall hs s locs id,
@@ -57,63 +68,64 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_getlocal n) hs s locs (HE_value HV_trap)
   | pr_setlocal:
     forall hs s locs n id locs' hv hvd,
-      hs id = Some hv ->
+      hs !! id = Some hv ->
       (nat_of_N n) < length locs ->
       locs' = set_nth hvd locs (nat_of_N n) hv ->
       pure_reduce hs s locs (HE_setlocal n id) hs s locs' (HE_value hv)
   | pr_setlocal_trap1:
     forall hs s locs n id,
-      hs id = None ->
+      hs !! id = None ->
       pure_reduce hs s locs (HE_setlocal n id) hs s locs (HE_value HV_trap)
   | pr_setlocal_trap2:
     forall hs s locs n id hv,
-      hs id = Some hv ->
+      hs !! id = Some hv ->
       (nat_of_N n) >= length locs ->
       pure_reduce hs s locs (HE_setlocal n id) hs s locs (HE_value HV_trap)
   | pr_if_true:
     forall hs s locs id e1 e2 hv,
-      hs id = Some hv ->
+      hs !! id = Some hv ->
       hv <> HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
       pure_reduce hs s locs (HE_if id e1 e2) hs s locs e1
   | pr_if_false: 
     forall hs s locs id e1 e2 hv,
-      hs id = Some hv ->
+      hs !! id = Some hv ->
       hv = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
       pure_reduce hs s locs (HE_if id e1 e2) hs s locs e2
   | pr_if_trap: 
     forall hs s locs id e1 e2,
-      hs id = None ->
+      hs !! id = None ->
       pure_reduce hs s locs (HE_if id e1 e2) hs s locs (HE_value HV_trap)
   | pr_while:
     forall hs s locs id e,
       pure_reduce hs s locs (HE_while id e) hs s locs (HE_if id (HE_seq e (HE_while id e)) (HE_value (HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)))))
   (* record exprs *)
   | pr_new_rec:
-    forall hs s locs kip kvp,
-      build_host_kvp hs kip = Some kvp ->
+    forall hs s locs kip hvs kvp,
+      list_extra.those (map (fun id => hs !! id) (unzip2 kip)) = Some hvs ->
+      zip (unzip1 kip) hvs = kvp ->
       pure_reduce hs s locs (HE_new_rec kip) hs s locs (HE_value (HV_record kvp))
   | pr_new_rec_trap:
     forall hs s locs kip,
-      build_host_kvp hs kip = None ->
+      list_extra.those (map (fun id => hs !! id) (unzip2 kip)) = None ->
       pure_reduce hs s locs (HE_new_rec kip) hs s locs (HE_value HV_trap)
   | pr_getfield:
     forall hs s locs id fname kvp hv,
-      hs id = Some (HV_record kvp) ->
+      hs !! id = Some (HV_record kvp) ->
       getvalue_kvp kvp fname = Some hv ->
       pure_reduce hs s locs (HE_get_field id fname) hs s locs (HE_value hv)
   | pr_getfield_trap1:
     forall hs s locs id fname kvp,
-      hs id = Some (HV_record kvp) ->
+      hs !! id = Some (HV_record kvp) ->
       getvalue_kvp kvp fname = None ->
       pure_reduce hs s locs (HE_get_field id fname) hs s locs (HE_value HV_trap)
   | pr_getfield_trap2:
     forall hs s locs id fname hv,
-      hs id = Some hv ->
+      hs !! id = Some hv ->
       host_typeof hv <> Some HT_record ->
       pure_reduce hs s locs (HE_get_field id fname) hs s locs (HE_value HV_trap)
   | pr_getfield_trap3:
     forall hs s locs id fname,
-      hs id = None ->
+      hs !! id = None ->
       pure_reduce hs s locs (HE_get_field id fname) hs s locs (HE_value HV_trap)
   (* function exprs *)
   | pr_new_host_func:
@@ -123,58 +135,58 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_new_host_func htf (N_of_nat locsn) e) hs s' locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx n))))
   | pr_call_wasm:
     forall hs s ids cl id i j vts bes tf vs tn tm vars locs,
-      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       List.nth_error s.(s_funcs) i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
-      lookup_host_vars ids hs = Some vars ->
+      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
       list_host_value_to_wasm vars = Some vs ->
       tn = map typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
   | pr_call_trap1:
     forall hs s locs id ids,
-      hs id = None ->
+      hs !! id = None ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)
   | pr_call_trap2:
     forall hs s locs id ids v,
-      hs id = Some v ->
+      hs !! id = Some v ->
       is_funcref v = false ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)
   | pr_call_trap3:
     forall hs s locs id ids i,
-      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       List.nth_error s.(s_funcs) i = None ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_trap4:
     forall hs s locs id ids,
-      lookup_host_vars ids hs = None ->
+      list_extra.those (map (fun id => hs !! id) ids) = None ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)
   | pr_call_wasm_trap1:
     forall hs s locs id ids i cl j tf vts bes vars tn tm,
-      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       List.nth_error s.(s_funcs) i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
-      lookup_host_vars ids hs = Some vars ->
+      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
       list_host_value_to_wasm vars = None ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_wasm_trap2:
     forall hs s locs id ids i cl j tf vts bes vars tn tm vs,
-      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       List.nth_error s.(s_funcs) i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
-      lookup_host_vars ids hs = Some vars ->
+      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
       list_host_value_to_wasm vars = Some vs ->
       tn <> map typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_host:
     forall hs s ids cl id i n e tf tn tm vars vs locs,
-      hs id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       List.nth_error s.(s_funcs) i = Some cl ->
       cl = FC_func_host tf n e ->
       tf = Tf tn tm ->
-      lookup_host_vars ids hs = Some vars ->
+      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
       list_host_value_to_wasm vars = Some vs -> (* TODO: change this to explicit casts, then add a trap case. *)
       tn = map typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
@@ -187,16 +199,16 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_wasm_table_create len) hs s' locs (HE_value (HV_wov (WOV_tableref (Mk_tableidx n))))
   | pr_table_set:
     forall hs s locs idt n id v tn tab tab' s' tabd fn hvd,
-      hs idt = Some (HV_wov (WOV_tableref (Mk_tableidx tn))) ->
+      hs !! idt = Some (HV_wov (WOV_tableref (Mk_tableidx tn))) ->
       List.nth_error s.(s_tables) tn = Some tab ->
-      hs id = Some v ->
+      hs !! id = Some v ->
       v = HV_wov (WOV_funcref (Mk_funcidx fn)) ->
       tab' = {|table_data := set_nth hvd tab.(table_data) n (Some fn); table_max_opt := tab.(table_max_opt) |} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := set_nth tabd s.(s_tables) tn tab'; s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
       pure_reduce hs s locs (HE_wasm_table_set idt (N_of_nat n) id) hs s' locs (HE_value v)
   | pr_table_get:
     forall hs s locs idt n tn tab fn,
-      hs idt = Some (HV_wov (WOV_tableref (Mk_tableidx tn))) ->
+      hs !! idt = Some (HV_wov (WOV_tableref (Mk_tableidx tn))) ->
       List.nth_error s.(s_tables) tn = Some tab ->
       List.nth_error tab.(table_data) n = Some (Some fn) ->
       pure_reduce hs s locs (HE_wasm_table_get idt (N_of_nat n)) hs s locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx fn))))
@@ -207,22 +219,22 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_wasm_memory_create sz sz_lim) hs s' locs (HE_value (HV_wov (WOV_memoryref (Mk_memidx n))))
   | pr_memory_set:
     forall hs s locs idm n id mn m m' md' s' memd b,
-      hs idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
+      hs !! idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
       List.nth_error s.(s_mems) mn = Some m ->
-      hs id = Some (HV_byte b) ->
+      hs !! id = Some (HV_byte b) ->
       memory_list.mem_update n b m.(mem_data) = Some md' ->
       m' = {|mem_data := md'; mem_max_opt := m.(mem_max_opt) |} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := set_nth memd s.(s_mems) mn m'; s_globals := s.(s_globals) |} ->
       pure_reduce hs s locs (HE_wasm_memory_set idm n id) hs s' locs (HE_value (HV_byte b))
   | pr_memory_get:
     forall hs s locs idm n b m mn,
-      hs idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
+      hs !! idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
       List.nth_error s.(s_mems) mn = Some m ->
       memory_list.mem_lookup n m.(mem_data) = Some b ->
       pure_reduce hs s locs (HE_wasm_memory_get idm n) hs s locs (HE_value (HV_byte b))
   | pr_memory_grow:
     forall hs s s' locs idm n m m' mn memd,
-      hs idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
+      hs !! idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
       List.nth_error s.(s_mems) mn = Some m ->
       mem_grow m n = Some m' ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := set_nth memd s.(s_mems) mn m'; s_globals := s.(s_globals) |} ->
@@ -234,8 +246,8 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_wasm_global_create g) hs s' locs (HE_value (HV_wov (WOV_globalref (Mk_globalidx n))))
   | pr_global_set:
     forall hs s locs gn idg id s' v g g' gd,
-      hs id = Some (HV_wasm_value v) ->
-      hs idg = Some (HV_wov (WOV_globalref (Mk_globalidx gn))) ->
+      hs !! id = Some (HV_wasm_value v) ->
+      hs !! idg = Some (HV_wov (WOV_globalref (Mk_globalidx gn))) ->
       List.nth_error s.(s_globals) gn = Some g ->
       g.(g_mut) = MUT_mut ->
       typeof v = typeof (g.(g_val)) ->
@@ -244,21 +256,21 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_wasm_global_set idg id) hs s' locs (HE_value (HV_wasm_value v))
   | pr_global_get:
     forall hs s locs idg g gn v,
-      hs idg = Some (HV_wov (WOV_globalref (Mk_globalidx gn))) ->
+      hs !! idg = Some (HV_wov (WOV_globalref (Mk_globalidx gn))) ->
       g.(g_val) = v ->
       pure_reduce hs s locs (HE_wasm_global_get idg) hs s locs (HE_value (HV_wasm_value v))
   (* wasm module expr *)
   | pr_compile:
     forall hs s locs id mo hvl hbytes,
-      hs id = Some (HV_list hvl) ->
+      hs !! id = Some (HV_list hvl) ->
       to_bytelist hvl = Some hbytes ->
       run_parse_module (map byte_of_compcert_byte hbytes) = Some mo -> (* Check: is this correct? *)
       pure_reduce hs s locs (HE_compile id) hs s locs (HE_value (HV_module mo))
   (* TODO: replace the proxy *)
   | pr_instantiate:
     forall hs s locs idm idr mo r rec,
-      hs idm = Some (HV_module mo) ->
-      hs idr = Some (HV_record r) ->
+      hs !! idm = Some (HV_module mo) ->
+      hs !! idr = Some (HV_record r) ->
       pure_reduce hs s locs (HE_instantiate idm idr) hs s locs rec
   (* miscellaneous *)
   | pr_seq_const:
@@ -272,14 +284,14 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_wasm_frame ([::AI_trap])) hs s locs (HE_value (HV_trap))
   | pr_host_return:
     forall hs s locsf locs ids e vs tn,
-      lookup_host_vars ids hs = Some vs ->
+      list_extra.those (map (fun id => hs !! id) ids) = Some vs ->
       pure_reduce hs s locsf (HE_host_frame tn locs (HE_seq (HE_return ids) e)) hs s locsf (HE_value (HV_list vs))
    
 
 (* TODO: needs all the host_expr reduction steps: compile, instantiate, etc. *)
 (* TODO: needs restructuring to make sense *)
-with wasm_reduce : host_state -> store_record -> frame -> list administrative_instruction ->
-                   host_state -> store_record -> frame -> list administrative_instruction -> Prop :=
+with wasm_reduce : host_state -> store_record -> datatypes.frame -> list administrative_instruction ->
+                   host_state -> store_record -> datatypes.frame -> list administrative_instruction -> Prop :=
   | wr_simple :
       forall e e' s f hs,
         reduce_simple e e' ->
@@ -323,7 +335,6 @@ with wasm_reduce : host_state -> store_record -> frame -> list administrative_in
         wasm_reduce hs s f (ves ++ [::AI_invoke a]) hs s f [::AI_local m f' [::AI_basic (BI_block (Tf [::] t2s) es)]]
   | wr_invoke_host :
     (* TODO: check *)
-    (* TODO: check - R *)  
     forall a cl e tf t1s t2s ves vcs m n s s' f hs hs' vs,
       List.nth_error s.(s_funcs) a = Some cl ->
       cl = FC_func_host tf n e ->
@@ -332,18 +343,19 @@ with wasm_reduce : host_state -> store_record -> frame -> list administrative_in
       length vcs = n ->
       length t1s = n ->
       length t2s = m ->
-      Some vs = lookup_host_vars_as_i32s vcs hs ->
+      (* TODO: check if this is what we want *)
+      map (fun x => HV_wasm_value x) vcs = vs ->
       wasm_reduce hs s f (ves ++ [::AI_invoke a]) hs' s' f [::AI_host_frame t1s vs e]
 
   | wr_host_step :
     (* TODO: check *)
-    forall hs s (f : frame) ts vs e hs' s' vs' e',
+    forall hs s (f : datatypes.frame) ts vs e hs' s' vs' e',
       pure_reduce hs s vs e hs' s' vs' e' ->
         wasm_reduce hs s f [::AI_host_frame ts vs e] hs' s' f [::AI_host_frame ts vs' e']
   | wr_host_return :
     (* TODO: check *)
     forall hs s f ts vs ids vs' vs'',
-    Some vs' = lookup_host_vars ids hs ->
+    list_extra.those (map (fun id => hs !! id) ids) = Some vs' ->
     Some vs'' = list_extra.those (List.map (fun x => match x with | HV_wasm_value v => Some v | _ => None end) vs') ->
     wasm_reduce hs s f [::AI_host_frame ts vs (HE_return ids)] hs s f (v_to_e_list vs'')
 (*  
@@ -462,14 +474,13 @@ with wasm_reduce : host_state -> store_record -> frame -> list administrative_in
         wasm_reduce hs s f0 [::AI_local n f es] hs' s' f0 [::AI_local n f' es']
 .
 
-
 Inductive head_reduce: state -> expr -> state -> expr -> Prop :=
   | purer_headr:
     forall hs s locs e hs' s' locs' e',
       pure_reduce hs s locs e hs' s' locs' e' ->
       head_reduce (hs, s, locs) e (hs', s', locs') e'.
 
- Definition head_step (e : expr) (s : state) (os : list observation) (e' : expr) (s' : state) (es' : list expr) : Prop :=
+Definition head_step (e : expr) (s : state) (os : list observation) (e' : expr) (s' : state) (es' : list expr) : Prop :=
   head_reduce s e s' e' /\
   os = nil /\
   es' = nil. (* ?? *) 
@@ -499,15 +510,6 @@ Qed.
 
 (* binary parser also has a Language definition. *)
 Canonical Structure wasm_lang := language.Language wasm_mixin.
-
-From stdpp Require Import fin_maps.
-From iris.proofmode Require Import tactics.
-From iris.algebra Require Import auth gmap.
-From iris.bi.lib Require Import fractional.
-From iris.base_logic.lib Require Export gen_heap proph_map.
-From iris.program_logic Require Export weakestpre total_weakestpre.
-
-From iris.heap_lang Require Import locations.
 
 Definition proph_id := unit. (* ??? *)
 
