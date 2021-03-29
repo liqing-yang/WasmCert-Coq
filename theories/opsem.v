@@ -144,7 +144,7 @@ Inductive reduce_simple : seq administrative_instruction -> seq administrative_i
         lfilled 0 lh [::AI_trap] es ->
         reduce_simple es [::AI_trap]
 .
-
+(*
 (* Due to host's ability to invoke wasm functions and wasm's ability to invoke host
      functions, the opsem is necessarily mutually recursive. *)
 Inductive host_reduce : host_state -> store_record -> list host_value -> host_expr ->
@@ -622,3 +622,4 @@ Definition reduce_trans :
     host_state * store_record * frame * seq administrative_instruction -> Prop :=
   Relations.Relation_Operators.clos_refl_trans _ reduce_tuple.
 
+*)

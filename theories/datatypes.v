@@ -550,7 +550,7 @@ Inductive extern_t : Type :=
 | ET_glob : global_type -> extern_t
 .
 
-Definition id : Type := i32.
+Definition id : Type := N.
 
 Definition field_name := name (* TODO: ? *).
 

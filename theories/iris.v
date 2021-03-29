@@ -11,21 +11,20 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Require Import operations datatypes opsem interpreter binary_format_parser.
+Require Import common operations datatypes datatypes_properties opsem interpreter binary_format_parser.
 
-From stdpp Require Import fin_maps pmap gmap.
+From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
 From iris.algebra Require Import auth.
 From iris.bi.lib Require Import fractional.
 From iris.base_logic.lib Require Export gen_heap proph_map.
 From iris.program_logic Require Export weakestpre total_weakestpre.
-
 From iris.heap_lang Require Import locations.
 
 Definition expr := host_expr.
 Definition val := host_value.
 (* We have to overwrite the definition here for Iris's usage of gmap for heaps. *)
-Definition host_state := gmap loc (option val).
+Definition host_state := gmap id (option val).
 Definition state : Type := host_state * store_record * (list host_value).
 Definition observation := unit. (* TODO: ??? *)
 
@@ -37,14 +36,29 @@ Fixpoint to_val (e : expr) : option val :=
   | _ => None
   end.
 
+(* https://softwarefoundations.cis.upenn.edu/qc-current/Typeclasses.html *)
 Set Typeclasses Debug.
+
+Print gmap_lookup.
+
+Global Instance val_eq_dec : EqDecision val.
+Proof. decidable_equality. Defined.
+
+Global Instance id_eq_dec : EqDecision id.
+Proof. decidable_equality. Defined.
+
+Global Instance id_countable : Countable id.
+Proof. refine (inj_countable (fun x => x) (fun x => Some x) _). by []. Defined.
 
 Inductive pure_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
   (* TODO: basic exprs -- arith ops, list ops left *)
   | pr_getglobal:
-    forall hs s locs id hv hv2,
-      hs !! id = Some hv ->
+    forall hs s locs id hv hv',
+      (* TODO: this doesn't work ofc, but there will be a weird typeclass error if I want to 
+           write hs !! id = Some hv -- but would mysteriously work if I write
+           gmap_lookup id hs = Some (Some hv) (which doesn't make sense). TO BE FIXED *)
+      hs !! id = hv ->
       pure_reduce hs s locs (HE_getglobal id) hs s locs (HE_value hv)
   | pr_getglobal_trap:
     forall hs s locs id,

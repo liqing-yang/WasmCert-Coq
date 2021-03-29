@@ -404,3 +404,13 @@ Definition eqres_stepP : Equality.axiom res_step_eqb :=
 Canonical Structure res_step_eqMixin := EqMixin eqres_stepP.
 Canonical Structure res_step_eqType := Eval hnf in EqType res_step res_step_eqMixin.
 
+Definition id_eq_dec : forall v1 v2 : datatypes.id, {v1 = v2} + {v1 <> v2}.
+Proof. decidable_equality.
+Defined.
+
+Definition id_eqb v1 v2 : bool := id_eq_dec v1 v2.
+Definition eqidP : Equality.axiom id_eqb :=
+  eq_dec_Equality_axiom id_eq_dec.
+
+Canonical Structure id_eqMixin := EqMixin eqidP.
+Canonical Structure id_eqType := Eval hnf in EqType datatypes.id id_eqMixin.
