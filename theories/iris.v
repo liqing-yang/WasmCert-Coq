@@ -5,7 +5,8 @@ From mathcomp Require Import ssreflect ssrbool eqtype seq.
 
 (* There is a conflict between ssrnat and Iris language. *)
 (* Also a conflict between ssrnat and stdpp on the notation .* *)
-From iris.program_logic Require Import language.
+From iris.program_logic Require Import ectx_lifting total_ectx_lifting.
+From iris.program_logic Require Import language ectx_language ectxi_language.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -17,7 +18,7 @@ From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
 From iris.algebra Require Import auth.
 From iris.bi.lib Require Import fractional.
-From iris.base_logic.lib Require Export gen_heap proph_map.
+From iris.base_logic.lib Require Export gen_heap proph_map gen_inv_heap.
 From iris.program_logic Require Export weakestpre total_weakestpre.
 From iris.heap_lang Require Import locations.
 
@@ -37,34 +38,26 @@ Fixpoint to_val (e : expr) : option val :=
   end.
 
 (* https://softwarefoundations.cis.upenn.edu/qc-current/Typeclasses.html *)
-Set Typeclasses Debug.
-
-Print gmap_lookup.
-
 Global Instance val_eq_dec : EqDecision val.
 Proof. decidable_equality. Defined.
-
+(*
 Global Instance id_eq_dec : EqDecision id.
 Proof. decidable_equality. Defined.
 
 Global Instance id_countable : Countable id.
 Proof. refine (inj_countable (fun x => x) (fun x => Some x) _). by []. Defined.
-
-Variable hs : host_state.
-Variable id : id.
-
-Definition hv := hs !! id.
-
-Print hv.
-
+*)
 Inductive pure_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
   (* TODO: basic exprs -- arith ops, list ops left *)
   | pr_getglobal:
       forall hs s locs id hv ,
       (* Upd: ok it does make sense for the lookup result to carry a double Some, since
-           gmap lookup itself returns an option. In that case it's weird why the Iris heap
-           should be defined as a gmap loc (option val). But we blindly follow heaplang for now.
+           gmap lookup itself returns an option.
+
+         After some thoughts, this double option should be allowing us a way to know that 
+           a memory is actually freed -- so we can distinguish between what we don't know and
+           what we know to be non-existent.
 
          Also, the error message from the Lookup typeclass doesn't point to a specific line.. *)
       hs !! id = Some (Some hv) ->
@@ -524,7 +517,13 @@ Proof.
   by inversion H.
 Qed.
 
-Lemma wasm_mixin : LanguageMixin of_val to_val head_step.
+(* empty definitions just to enable the tactics in EctxiLanguageMixin as almost all prebuilt
+     tactics could only work for EctxilanguageMixin*)
+Inductive ectx_item := .
+
+Fixpoint fill_item (Ki: ectx_item) (e: expr) : expr := e.
+
+Lemma wasm_mixin : EctxiLanguageMixin of_val to_val fill_item head_step.
 Proof.
   split => //.
   - by apply of_to_val.
@@ -532,31 +531,36 @@ Proof.
 Qed.
 
 (* binary parser also has a Language definition. *)
-Canonical Structure wasm_lang := language.Language wasm_mixin.
+Canonical Structure wasm_ectxi_lang := EctxiLanguage wasm_mixin.
+Canonical Structure wasm_ectx_lang := EctxLanguageOfEctxi wasm_ectxi_lang.
+Canonical Structure wasm_lang := LanguageOfEctx wasm_ectx_lang.
 
 Definition proph_id := unit. (* ??? *)
 
 Class heapG Σ := HeapG {
   heapG_invG : invG Σ;
-  heapG_gen_heapG :> gen_heapG loc (option val) Σ;
+  heapG_gen_heapG :> gen_heapG id (option val) Σ;
   heapG_proph_mapG :> proph_mapG proph_id (val * val) Σ;
 }.
 
-Definition gmap_of_state (σ : state) : gmap loc (option val) .
-Proof.
-  destruct σ as [[hs s] locs].
-  refine (gmap_empty). (* need to somehow convert host_state to a gmap -- should be trivial? *)
-Defined.
-  
+(* Only considering the host variable store for now *)
+Definition gmap_of_state (σ : state) : gmap id (option val) :=
+  let (hss, locs) := σ in let (hs, s) := hss in hs.
+
 Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
   iris_invG := heapG_invG;
-  state_interp σ κs _ :=
-    gen_heap_ctx (gmap_of_state σ);
+  state_interp σ κs _ := gen_heap_ctx (gmap_of_state σ);
   fork_post z := True%I;
 }.
 
-Notation "l ↦{ q } v" := (mapsto (L:=loc) (V:=option val) l q (Some v%V))
-  (at level 20, q at level 50, format "l  ↦{ q }  v") : bi_scope.
+Notation "l ↦ { q } v" := (mapsto (L:=id) (V:=option val) l q (Some v%V))
+  (at level 20, q at level 5, format "l  ↦ { q } v") : bi_scope.
+
+Section lifting.
+
+Context `{!heapG Σ}.
+
+Implicit Types σ : state.
 
   Ltac inv_head_step :=
     repeat match goal with
@@ -566,9 +570,20 @@ Notation "l ↦{ q } v" := (mapsto (L:=loc) (V:=option val) l q (Some v%V))
        try (is_var e; fail 1); (* inversion yields many goals if [e] is a variable
        and can thus better be avoided. *)
        inversion H; subst; clear H
-    end.
-  
+           end.
 
+(* See if this works *)
+Lemma wp_getglobal s E id q v hv :
+  [[{ id ↦ { q } hv }]] HE_getglobal id @ s; E
+  [[{ RET v; ⌜ v = hv ⌝ }]].
+Proof.
+  iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork => //.
+  iIntros (σ1 κs n) "Hσ !>". iSimpl.
+Admitted.
+
+
+  
+(*
 Definition locof (n : nat) := {| loc_car := (Z.of_nat n) |}.
 
 Section lifting.
@@ -636,3 +651,4 @@ Qed.
 End lifting.
 
 
+*)
