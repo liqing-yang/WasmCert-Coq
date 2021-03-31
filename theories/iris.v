@@ -40,13 +40,7 @@ Fixpoint to_val (e : expr) : option val :=
 (* https://softwarefoundations.cis.upenn.edu/qc-current/Typeclasses.html *)
 Global Instance val_eq_dec : EqDecision val.
 Proof. decidable_equality. Defined.
-(*
-Global Instance id_eq_dec : EqDecision id.
-Proof. decidable_equality. Defined.
 
-Global Instance id_countable : Countable id.
-Proof. refine (inj_countable (fun x => x) (fun x => Some x) _). by []. Defined.
-*)
 Inductive pure_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
   (* TODO: basic exprs -- arith ops, list ops left *)
@@ -573,15 +567,22 @@ Implicit Types σ : state.
            end.
 
 (* See if this works *)
-Lemma wp_getglobal s E id q v hv :
-  [[{ id ↦ { q } hv }]] HE_getglobal id @ s; E
-  [[{ RET v; ⌜ v = hv ⌝ }]].
+Lemma wp_getglobal s E id q v :
+  [[{ id ↦ { q } v }]] HE_getglobal id @ s; E
+  [[{ RET v; id ↦ { q } v }]].
 Proof.
-  iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork => //.
-  iIntros (σ1 κs n) "Hσ !>". iSimpl.
-Admitted.
-
-
+  iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
+  iIntros (σ1 κs n) "Hσ !>". iDestruct (gen_heap_valid with "Hσ Hl") as %?.
+  iSplit.
+  - unfold head_reducible_no_obs. inv_head_step. iExists (HE_value v), σ1, [].
+    unfold gmap_of_state in H. destruct σ1 as [[hs ws] locs].
+    inv_head_step. unfold head_step. repeat iSplit => //. 
+    eapply pr_getglobal in H. done.
+  -   
+    iIntros (κ v2 σ2 efs Hstep); inv_head_step. inversion H0. inversion H2; subst; clear H0; clear H2; destruct H1; iModIntro; repeat (iSplit; first done);  iFrame; iSimpl;
+     simpl in H; rewrite H in H11; inversion H11; subst. by iApply "HΦ".
+Qed.
+(* Ok, but I have no idea on what I've proved and how I've proved it.. *)
   
 (*
 Definition locof (n : nat) := {| loc_car := (Z.of_nat n) |}.
