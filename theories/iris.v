@@ -563,11 +563,26 @@ Implicit Types σ : state.
     | H : head_step ?e _ _ _ _ _ |- _ =>
        try (is_var e; fail 1); (* inversion yields many goals if [e] is a variable
        and can thus better be avoided. *)
-       inversion H; subst; clear H
+       inversion H; subst; clear H;
+       lazymatch goal with
+       | H : head_reduce _ _ _ _ |- _ =>
+         inversion H => //; subst; clear H;
+         lazymatch goal with
+         | H : pure_reduce _ _ _ _ _ _ _ _ |- _ =>
+           inversion H => //; subst; clear H;
+           lazymatch goal with
+           | H : _ = [] /\ _ = [] |- _ =>
+             destruct H
+           | _ => fail 4
+           end
+         | _ => fail 3
+         end
+       | _ => fail 2
+       end
            end.
 
 (* See if this works *)
-Lemma wp_getglobal s E id q v :
+Lemma twp_getglobal s E id q v :
   [[{ id ↦ { q } v }]] HE_getglobal id @ s; E
   [[{ RET v; id ↦ { q } v }]].
 Proof.
@@ -576,14 +591,35 @@ Proof.
   iSplit.
   - unfold head_reducible_no_obs. inv_head_step. iExists (HE_value v), σ1, [].
     unfold gmap_of_state in H. destruct σ1 as [[hs ws] locs].
-    inv_head_step. unfold head_step. repeat iSplit => //. 
-    eapply pr_getglobal in H. done.
-  -   
-    iIntros (κ v2 σ2 efs Hstep); inv_head_step. inversion H0. inversion H2; subst; clear H0; clear H2; destruct H1; iModIntro; repeat (iSplit; first done);  iFrame; iSimpl;
-     simpl in H; rewrite H in H11; inversion H11; subst. by iApply "HΦ".
+    inv_head_step. unfold head_step. repeat iSplit => //.
+    (* iPureIntro takes an Iris goal ⌜ P ⌝ into a Coq goal P. *)
+    iPureIntro.
+    apply purer_headr. by apply pr_getglobal.
+  - iIntros (κ v2 σ2 efs Hstep); inv_head_step.
+    + iModIntro; repeat (iSplit; first done). iFrame. 
+      by iApply "HΦ".
+    + by rewrite H in H6.  
 Qed.
-(* Ok, but I have no idea on what I've proved and how I've proved it.. *)
-  
+
+Lemma twp_setglobal_value s E id w v:
+  v <> HV_trap ->
+  [[{ id ↦ { 1 } w }]] HE_setglobal id (HE_value v) @ s; E
+  [[{ RET v; id ↦ { 1 } v }]].
+Proof.
+  intros HNTrap.
+  iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
+  iIntros (σ1 κs n) "Hσ !>". iDestruct (gen_heap_valid with "Hσ Hl") as %?.
+  iSplit.
+  - unfold head_reducible_no_obs. inv_head_step. 
+    unfold gmap_of_state in H. destruct σ1 as [[hs ws] locs].
+    inv_head_step. unfold head_step. repeat iSplit => //. 
+    iPureIntro. repeat eexists. by apply pr_setglobal_value.
+  - iIntros (κ v2 σ2 efs Hstep); inv_head_step.
+    (* What does this do? *)
+    iMod (gen_heap_update with "Hσ Hl") as "[$ Hl]".
+    iModIntro. repeat (iSplit => //). by iApply "HΦ".
+Qed.
+
 (*
 Definition locof (n : nat) := {| loc_car := (Z.of_nat n) |}.
 
