@@ -68,6 +68,10 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   | pr_setglobal_trap:
     forall hs s locs id,
       pure_reduce hs s locs (HE_setglobal id (HE_value HV_trap)) hs s locs (HE_value HV_trap)
+  | pr_setglobal_step:
+    forall hs s locs e hs' s' locs' e' id,
+      pure_reduce hs s locs e hs' s' locs' e' ->
+      pure_reduce hs s locs (HE_setglobal id e) hs' s' locs' (HE_setglobal id e')
   | pr_getlocal:
     forall hs s locs n hv,
       List.nth_error locs (nat_of_N n) = Some hv ->
@@ -563,22 +567,16 @@ Implicit Types σ : state.
     | H : head_step ?e _ _ _ _ _ |- _ =>
        try (is_var e; fail 1); (* inversion yields many goals if [e] is a variable
        and can thus better be avoided. *)
-       inversion H; subst; clear H;
-       lazymatch goal with
-       | H : head_reduce _ _ _ _ |- _ =>
-         inversion H => //; subst; clear H;
-         lazymatch goal with
-         | H : pure_reduce _ _ _ _ _ _ _ _ |- _ =>
-           inversion H => //; subst; clear H;
-           lazymatch goal with
-           | H : _ = [] /\ _ = [] |- _ =>
-             destruct H
-           | _ => fail 4
-           end
-         | _ => fail 3
-         end
-       | _ => fail 2
-       end
+       inversion H; subst; clear H
+    | H : head_reduce _ _ _ _ |- _ =>
+      inversion H => //; subst; clear H;
+      lazymatch goal with
+      | H : pure_reduce _ _ _ _ _ _ _ _ |- _ =>
+        inversion H => //; subst; clear H
+      | _ => fail 2
+      end
+    | H : _ = [] /\ _ = [] |- _ =>
+       destruct H
            end.
 
 (* See if this works *)
@@ -601,6 +599,7 @@ Proof.
     + by rewrite H in H6.  
 Qed.
 
+(* If we have full ownership then we can also set the value of it. *)
 Lemma twp_setglobal_value s E id w v:
   v <> HV_trap ->
   [[{ id ↦ { 1 } w }]] HE_setglobal id (HE_value v) @ s; E
@@ -616,10 +615,49 @@ Proof.
     iPureIntro. repeat eexists. by apply pr_setglobal_value.
   - iIntros (κ v2 σ2 efs Hstep); inv_head_step.
     (* What does this do? *)
-    iMod (gen_heap_update with "Hσ Hl") as "[$ Hl]".
-    iModIntro. repeat (iSplit => //). by iApply "HΦ".
+    + iMod (gen_heap_update with "Hσ Hl") as "[$ Hl]".
+      iModIntro. repeat (iSplit => //). by iApply "HΦ".
+    + by inversion H11.
 Qed.
 
+Lemma twp_setglobal_trap s E id:
+  [[{ True }]] HE_setglobal id (HE_value HV_trap) @ s; E
+  [[{ RET (HV_trap); True }]].
+Proof.
+  iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
+  iIntros (σ1 κs n) "Hσ !>".
+  iSplit.
+  - unfold head_reducible_no_obs. simpl in *. destruct σ1 as [[hs ws] locs].
+    iPureIntro. repeat eexists. by apply pr_setglobal_trap.
+  - iIntros (κ e2 σ2 efs Hstep); inv_head_step.
+    + iModIntro. repeat (iSplit => //). iFrame. by iApply "HΦ".
+    + by inversion H10.
+Qed.
+
+(* Manually deal with evaluation contexts. *)
+(* Think this might be wrong *)
+Lemma twp_setglobal_reduce s E id w e v P Q:
+  v <> HV_trap ->
+  [[{ P ∗ [[{ P }]] e [[{ RET v; (id ↦ { 1 } w) ∗ Q }]] }]] HE_setglobal id e @ s; E
+  [[{ RET v; (id ↦ { 1 } v) ∗ Q }]].
+Proof.
+  intros HNTrap.
+  iIntros (Φ) "[HP HTriple] HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
+  iIntros (σ1 κs n) "Hσ !>". 
+  iSplit.
+  - unfold head_reducible_no_obs. simpl in *. destruct σ1 as [[hs ws] locs].
+    (* How can we deduce e can be reduced by using the knowledge from HP and HTriple? *)
+    admit.
+  - iIntros (κ e2 σ2 efs Hstep); inv_head_step.
+    + iMod (gen_heap_update with "Hσ [HP HTriple]") as "[$ HP3]".
+      { admit.
+      }
+        iModIntro. repeat (iSplit => //). (* might be wrong *) admit.
+    + iModIntro. repeat (iSplit => //). iFrame. admit.
+    + iModIntro. repeat (iSplit => //). (* This isn't possible either. *) admit.
+    + (* And certainly not this. *) admit.
+Admitted.
+    
 (*
 Definition locof (n : nat) := {| loc_car := (Z.of_nat n) |}.
 
