@@ -580,22 +580,108 @@ Implicit Types σ : state.
            end.
 
 (* See if this works *)
-Lemma twp_getglobal s E id q v :
+Lemma twp_getglobal s E id q v:
   [[{ id ↦ { q } v }]] HE_getglobal id @ s; E
   [[{ RET v; id ↦ { q } v }]].
 Proof.
-  iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
-  iIntros (σ1 κs n) "Hσ !>". iDestruct (gen_heap_valid with "Hσ Hl") as %?.
+  (* https://gitlab.mpi-sws.org/iris/iris/blob/master/docs/proof_mode.md *)
+  iStartProof.
+  (*
+    By doing iStartProof we can see that the triple [[{ P }]] e @ s; E [[{ Q }]] is defined as
+    forall x: val -> iPropI Σ, P -* (Q -* x v) -* WP e @ s; E [{ v, x v }].
+    x should be thought of as an arbitrary proposition on a value v. So this roughly reads:
+
+    For any proposition Φ on v, if we're on a state where P holds, and Q could imply Φ v, then 
+      if we execute e and get v back then Φ v holds.
+   *)
+  (*
+    This iIntros introduces the proposition Φ into Coq context and the two 'ifs' (by wands) into
+      Iris context and call them Hl and HΦ. So anything inside quotations is going to Iris 
+      context while anything inside brackets is going to the Coq context.
+  *)
+  iIntros (Φ) "Hl HΦ".
+  (*
+     This lemma seems to be applicable if our instruction is atomic, can take a step, and does 
+       not involve concurrency (which is always true in our language). Upon applying the lemma
+       we are first asked to prove that the instruction is not a value (trivial). Then we getfield       a very sophisticated expression whose meaning is to be deciphered.
+  *)
+  iApply twp_lift_atomic_head_step_no_fork; first done.
+  (*
+    This is just another iIntros although with something new: !>. This !> pattern is for
+      removing the ={E}=* from our goal (this symbol represents an update modality).
+  *)
+  iIntros (σ1 κs n) "Hσ !>".
+  (*
+    A lot is going on here. The %? pattern in the end actually consists of two things: 
+      it should be read as first the %H pattern, which is for moving the destructed hypothesis
+      into the Coq context and naming it H; the ? pattern is just saying that this will be
+      anonymous (so give it any name). It turns out that it receives a name 'H' as well anyway.
+
+    The iDestruct itself specialises the term (gen_heap_valid with "Hσ Hl") -- called a 'proof 
+      mode term' -- and destruct it. It is currently unclear what 'specialise' means. But
+      we do have an explanation for what a 'proof mode term' is: the general syntax is
+
+        (H $ t1 ... tn with "spat1 ... spatn")
+
+      where H is a hypothesis or a lemma whose conclusion is of the form P ⊢ Q, the t_i's are 
+        for instantiating any quantifiers, and the spat_i's are 'specialization patterns' to 
+        instruct how wands and implications are dealt with. In this case, it is like the 
+        reverse of what happens in Intros, where we need to provide the lemma with hypotheses
+        to remove the wands -- note that the lemma gen_heap_valid is the following:
+
+        gen_heap_ctx σ -* l ↦ { q } v -* ⌜ σ !! l = Some v ⌝
+
+    So we are just providing our Hσ and Hl to help resolve the two assertions before wands.
+      Hl is id ↦ { q } v so that fills  the second assertion directly. On the other hand,
+      Hσ is 
+
+        state_interp σ1 κs n 
+
+      which is somewhat similar t the second component of our heapG_irisG construct,
+      whatever that heapG_irisG means; but that definition does say:
+
+        state_interp σ κs _ := gen_heap_ctx (gmap_of_state σ);
+
+    So we can see intuitively why Hσ could help to resolve the first assertion (although not 
+      knowing what exactly has happened).
+
+    Lastly, note that gmap_of_state σ1 is going to be just our host variable store hs due to
+      our dummy definition -- but we haven't destructed σ1, so we should get back a hypothesis 
+
+         (gmap_of_state σ1) !! id = Some (Some v), 
+
+      automatically named H due to the ? pattern, and moved into the Coq context due to the %?
+      pattern; the double Some comes from gmap contributing 1 and our definition of (option val)
+      contributing one.
+   *)
+  iDestruct (gen_heap_valid with "Hσ Hl") as %?.
+  (*
+    The iSplit tactics is easier -- it basically tries to split up P * Q into two, but only when
+      one of P or Q is persistent (else we'll have to use iSplitl/iSplitr, and also divide our
+      Iris hypothesis into two parts and we can only use one part on each side). 
+  *)
   iSplit.
+  (* The first part asks to prove that HE_getglobal id actually can reduce further. The proof
+      is just normal Coq instead of Iris so is left mostly without comments. *)
   - unfold head_reducible_no_obs. inv_head_step. iExists (HE_value v), σ1, [].
     unfold gmap_of_state in H. destruct σ1 as [[hs ws] locs].
     inv_head_step. unfold head_step. repeat iSplit => //.
     (* iPureIntro takes an Iris goal ⌜ P ⌝ into a Coq goal P. *)
     iPureIntro.
     apply purer_headr. by apply pr_getglobal.
+  (* The second part asks us to prove that, on all cases where we take a step, we can 
+       establish the proposition Φ.
+     
+     The function 'from_option f y mx' checks what option the mx is: if it's a Some x, then
+       return f applied to x; else return y. So in this case we are saying that, if the 
+       reduction result e2 is a value v, then we need to prove Φ v; else, if it's not a value,
+       we will need to be ready to prove False (why?).
+  *)
   - iIntros (κ v2 σ2 efs Hstep); inv_head_step.
+    (* There are two cases -- either the lookup result v is an actual valid value, or a trap. *)
     + iModIntro; repeat (iSplit; first done). iFrame. 
       by iApply "HΦ".
+    (* But it can't be a trap since we already have full knowledge from H what v should be. *)    
     + by rewrite H in H6.  
 Qed.
 
@@ -636,29 +722,25 @@ Qed.
 
 (* Manually deal with evaluation contexts. *)
 (* Think this might be wrong *)
-Lemma twp_setglobal_reduce s E id w e v P Q:
-  v <> HV_trap ->
-  [[{ P ∗ [[{ P }]] e [[{ RET v; (id ↦ { 1 } w) ∗ Q }]] }]] HE_setglobal id e @ s; E
-  [[{ RET v; (id ↦ { 1 } v) ∗ Q }]].
+Lemma twp_setglobal_reduce s E id e Q:
+  WP e @ s; E {{ v, WP (HE_setglobal id (HE_value v)) @ s; E {{ Q }} }} ⊢
+            WP (HE_setglobal id e) @ s; E {{ Q }}.
 Proof.
-  intros HNTrap.
-  iIntros (Φ) "[HP HTriple] HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
-  iIntros (σ1 κs n) "Hσ !>". 
-  iSplit.
-  - unfold head_reducible_no_obs. simpl in *. destruct σ1 as [[hs ws] locs].
-    (* How can we deduce e can be reduced by using the knowledge from HP and HTriple? *)
-    admit.
-  - iIntros (κ e2 σ2 efs Hstep); inv_head_step.
-    + iMod (gen_heap_update with "Hσ [HP HTriple]") as "[$ HP3]".
-      { admit.
-      }
-        iModIntro. repeat (iSplit => //). (* might be wrong *) admit.
-    + iModIntro. repeat (iSplit => //). iFrame. admit.
-    + iModIntro. repeat (iSplit => //). (* This isn't possible either. *) admit.
-    + (* And certainly not this. *) admit.
-Admitted.
-    
-(*
+  iIntros "H". iLöb as "IH" forall (E e Q). rewrite wp_unfold /wp_pre.  
+  destruct (to_val e) as [v|] eqn:He.
+  { apply of_to_val in He as <-. by iApply fupd_wp. }
+  rewrite wp_unfold /wp_pre /=; [|done].
+  rewrite wp_unfold /wp_pre fill_not_val /=; [|done].
+  iIntros (σ1 step κ κs n) "Hσ". iMod ("H" with "[$]") as "[% H]".
+  iModIntro; iSplit.
+  { destruct s; eauto using reducible_fill. }
+  iIntros (e2 σ2 efs Hstep).
+  destruct (fill_step_inv e σ1 κ e2 σ2 efs) as (e2'&->&?); auto.
+  iMod ("H" $! e2' σ2 efs with "[//]") as "H". iIntros "!>!>".
+  iMod "H". iModIntro. iApply (step_fupdN_wand with "H"). iIntros "H".
+  iMod "H" as "($ & H & $)". iModIntro. by iApply "IH".
+Qed.                            
+                              (*
 Definition locof (n : nat) := {| loc_car := (Z.of_nat n) |}.
 
 Section lifting.
