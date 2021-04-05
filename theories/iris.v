@@ -720,18 +720,28 @@ Proof.
     + by inversion H10.
 Qed.
 
-(* Manually deal with evaluation contexts. *)
+(* Manually deal with evaluation contexts. Supposedly this proof should be similar to
+     wp_bind. *)
 (* Think this might be wrong *)
 Lemma twp_setglobal_reduce s E id e Q:
   WP e @ s; E {{ v, WP (HE_setglobal id (HE_value v)) @ s; E {{ Q }} }} ⊢
             WP (HE_setglobal id e) @ s; E {{ Q }}.
 Proof.
-  iIntros "H". iLöb as "IH" forall (E e Q). rewrite wp_unfold /wp_pre.  
+  iIntros "H".
+  (*
+    iLöb does a Löb induction. In Iris the Löb rule is:
+      Q /\ ▷P ⊢ P -> Q ⊢ P
+    However the result of applying an iLob seems to be vastly different and the effect is to
+      be understood.
+  *)
+  iLöb as "IH" forall (E e Q).
+  rewrite wp_unfold /wp_pre /=.  
   destruct (to_val e) as [v|] eqn:He.
   { apply of_to_val in He as <-. by iApply fupd_wp. }
-  rewrite wp_unfold /wp_pre /=; [|done].
-  rewrite wp_unfold /wp_pre fill_not_val /=; [|done].
-  iIntros (σ1 step κ κs n) "Hσ". iMod ("H" with "[$]") as "[% H]".
+  rewrite wp_unfold /wp_pre /=.
+  iIntros (σ1 κ κs n) "Hσ".
+  (* How to resolve this fancy update modality? *)
+  iMod ("H" with "[$]") as "[% H]".
   iModIntro; iSplit.
   { destruct s; eauto using reducible_fill. }
   iIntros (e2 σ2 efs Hstep).
