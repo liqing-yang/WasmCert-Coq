@@ -519,7 +519,7 @@ Qed.
      tactics could only work for EctxilanguageMixin*)
 Inductive ectx_item := .
 
-Fixpoint fill_item (Ki: ectx_item) (e: expr) : expr := e.
+Definition fill_item (Ki: ectx_item) (e: expr) : expr := e.
 
 Lemma wasm_mixin : EctxiLanguageMixin of_val to_val fill_item head_step.
 Proof.
@@ -568,13 +568,12 @@ Implicit Types σ : state.
        try (is_var e; fail 1); (* inversion yields many goals if [e] is a variable
        and can thus better be avoided. *)
        inversion H; subst; clear H
-    | H : head_reduce _ _ _ _ |- _ =>
-      inversion H => //; subst; clear H;
-      lazymatch goal with
-      | H : pure_reduce _ _ _ _ _ _ _ _ |- _ =>
-        inversion H => //; subst; clear H
-      | _ => fail 2
-      end
+    | H : head_reduce _ ?e _ _ |- _ =>
+      try (is_var e; fail 1);
+      inversion H => //; subst; clear H
+    | H : pure_reduce _ _ _ ?e _ _ _ _ |- _ =>
+      try (is_var e; fail 1);
+      inversion H => //; subst; clear H
     | H : _ = [] /\ _ = [] |- _ =>
        destruct H
            end.
@@ -700,9 +699,8 @@ Proof.
     iPureIntro. repeat eexists. by apply pr_setglobal_value.
   - iIntros (κ v2 σ2 efs Hstep); inv_head_step.
     (* What does this do? *)
-    + iMod (gen_heap_update with "Hσ Hl") as "[$ Hl]".
-      iModIntro. repeat (iSplit => //). by iApply "HΦ".
-    + by inversion H11.
+    iMod (gen_heap_update with "Hσ Hl") as "[$ Hl]".
+    iModIntro. repeat (iSplit => //). by iApply "HΦ".
 Qed.
 
 Lemma twp_setglobal_trap s E id:
@@ -715,42 +713,97 @@ Proof.
   - unfold head_reducible_no_obs. simpl in *. destruct σ1 as [[hs ws] locs].
     iPureIntro. repeat eexists. by apply pr_setglobal_trap.
   - iIntros (κ e2 σ2 efs Hstep); inv_head_step.
-    + iModIntro. repeat (iSplit => //). iFrame. by iApply "HΦ".
-    + by inversion H10.
+    iModIntro. repeat (iSplit => //). iFrame. by iApply "HΦ".
+Qed.
+
+Print bi.
+
+Lemma reducible_head_step e σ:
+  reducible e σ ->
+  exists e' σ', head_step e σ [] e' σ' [].
+Proof.
+  intro H. unfold reducible in H.
+  do 4 destruct H as [??].
+  inversion H; simpl in *; subst.
+  destruct K => //.
+  unfold fill, ectxi_language.fill_item, fill_item in *. simpl in *. inversion H2.
+  destruct H1; subst. eauto.
+Qed.
+
+Lemma head_step_reducible e σ e' σ':
+  head_step e σ [] e' σ' [] ->
+  reducible e σ.
+Proof.
+  intro H. unfold reducible => /=.
+  exists [], e', σ', []. eapply Ectx_step => /=.
+  - instantiate (1 := e). by instantiate (1 := []).
+  - by instantiate (1 := e').
+  - by [].
 Qed.
 
 (* Manually deal with evaluation contexts. Supposedly this proof should be similar to
      wp_bind. *)
-(* Think this might be wrong *)
+(*
+  Technically this lemma should also be correct without the v ≠ HV_trap, but Hev can't be 
+    simplfied without it somehow.
+*)
 Lemma twp_setglobal_reduce s E id e Ψ Φ:
-  WP e @ s; E {{ v, Ψ v }} -∗
-  forall v, {{{ Ψ v }}} (HE_setglobal id (HE_value v)) @ s; E {{{ RET (HE_value v); Φ }}} ⊢
+  WP e @ s; E {{ v, ⌜ v <> HV_trap ⌝ ∗ Ψ v }} ∗
+  (∀ v, (( ⌜ v ≠ HV_trap ⌝ ∗ Ψ v) -∗ WP (HE_setglobal id (HE_value v)) @ s; E {{ Φ }})) ⊢
   WP (HE_setglobal id e) @ s; E {{ Φ }}.
 Proof.
-  iIntros "H".
+  iIntros "[Hev Hv]".
   (*
     iLöb does a Löb induction. In Iris the Löb rule is:
       Q /\ ▷P ⊢ P -> Q ⊢ P
     However the result of applying an iLob seems to be vastly different and the effect is to
       be understood.
   *)
-  iLöb as "IH" forall (E e Q).
-  rewrite wp_unfold /wp_pre /=.  
+  iLöb as "IH" forall (E e Φ).
+  rewrite wp_unfold /wp_pre /=.               
   destruct (to_val e) as [v|] eqn:He.
-  { apply of_to_val in He as <-. by iApply fupd_wp. }
+  { apply of_to_val in He as <-. iApply fupd_wp. by iApply "Hv". }
   rewrite wp_unfold /wp_pre /=.
   iIntros (σ1 κ κs n) "Hσ".
   (* How to resolve this fancy update modality? *)
-  iMod ("H" with "[$]") as "[% H]".
+  (* Update: using iMod is fine, just that in this case Iris doens't automatically
+       instantiate the variables for Hev for some reasons. *)
+  iMod ("Hev" $! σ1 κ κs n with "Hσ") as "[% H]".
   iModIntro; iSplit.
-  { destruct s; eauto using reducible_fill. }
+  {
+    destruct s; eauto.
+    (* There are some weird consequences with our choice of having 0 ectx item while
+         still using the ectxi_language framework: reducible is now equivalent to a head_step. *)
+    apply reducible_head_step in H. destruct H as [e' [σ' H]].
+    iPureIntro.
+    apply head_step_reducible with (e' := (HE_setglobal id e')) (σ' := σ').
+    unfold head_step in *. repeat split => //.
+    repeat destruct H as [??].
+    apply purer_headr.
+    by apply pr_setglobal_step.
+  }
   iIntros (e2 σ2 efs Hstep).
-  destruct (fill_step_inv e σ1 κ e2 σ2 efs) as (e2'&->&?); auto.
-  iMod ("H" $! e2' σ2 efs with "[//]") as "H". iIntros "!>!>".
-  iMod "H". iModIntro. iApply (step_fupdN_wand with "H"). iIntros "H".
-  iMod "H" as "($ & H & $)". iModIntro. by iApply "IH".
-Qed.                            
-                              (*
+  inversion Hstep; destruct K; last by []; simpl in *; subst.
+  inv_head_step.
+  (* We need to manually establish this relation for the next modality to be resolved,
+       unlike the proof to wp_bind. *)
+  assert (prim_step e (hs, s0, locs) [] e' (hs', s', locs') []) as Hprim.
+  {
+    by apply Ectx_step with (K := []) (e1' := e) (e2' := e').
+  }
+  iMod ("H" $! e' (hs', s', locs') [] with "[//]") as "H". iIntros "!>!>".
+  iMod "H". iModIntro. iSimpl in "H".
+  iDestruct "H" as "[Hheap H]".
+  iSplitL "Hheap"; first by eauto.
+  iSplitL; last by eauto.
+  iDestruct "H" as "[H _]".
+  (* "[$]" seems to mean 'find the useful hypotheses by yourself, as this should be normally
+    resolved by with "Hv H" *)
+  by iApply ("IH" with "[$]").
+  (* Now we've actually proved this thing finally.. *)  
+Qed.
+
+  (*
 Definition locof (n : nat) := {| loc_car := (Z.of_nat n) |}.
 
 Section lifting.
