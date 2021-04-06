@@ -585,7 +585,6 @@ Lemma twp_getglobal s E id q v:
   [[{ RET v; id ↦ { q } v }]].
 Proof.
   (* https://gitlab.mpi-sws.org/iris/iris/blob/master/docs/proof_mode.md *)
-  iStartProof.
   (*
     By doing iStartProof we can see that the triple [[{ P }]] e @ s; E [[{ Q }]] is defined as
     forall x: val -> iPropI Σ, P -* (Q -* x v) -* WP e @ s; E [{ v, x v }].
@@ -723,9 +722,10 @@ Qed.
 (* Manually deal with evaluation contexts. Supposedly this proof should be similar to
      wp_bind. *)
 (* Think this might be wrong *)
-Lemma twp_setglobal_reduce s E id e Q:
-  WP e @ s; E {{ v, WP (HE_setglobal id (HE_value v)) @ s; E {{ Q }} }} ⊢
-            WP (HE_setglobal id e) @ s; E {{ Q }}.
+Lemma twp_setglobal_reduce s E id e Ψ Φ:
+  WP e @ s; E {{ v, Ψ v }} -∗
+  forall v, {{{ Ψ v }}} (HE_setglobal id (HE_value v)) @ s; E {{{ RET (HE_value v); Φ }}} ⊢
+  WP (HE_setglobal id e) @ s; E {{ Φ }}.
 Proof.
   iIntros "H".
   (*
