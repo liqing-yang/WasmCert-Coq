@@ -560,30 +560,35 @@ Context `{!heapG Σ}.
 
 Implicit Types σ : state.
 
-  Ltac inv_head_step :=
-    repeat match goal with
-    | _ => progress simplify_map_eq/= (* simplify memory stuff *)
-    | H : to_val _ = Some _ |- _ => apply of_to_val in H
-    | H : head_step ?e _ _ _ _ _ |- _ =>
-       try (is_var e; fail 1); (* inversion yields many goals if [e] is a variable
-       and can thus better be avoided. *)
-       inversion H; subst; clear H
-    | H : head_reduce _ ?e _ _ |- _ =>
-      try (is_var e; fail 1);
-      inversion H => //; subst; clear H
-    | H : pure_reduce _ _ _ ?e _ _ _ _ |- _ =>
-      try (is_var e; fail 1);
-      inversion H => //; subst; clear H
-    | H : _ = [] /\ _ = [] |- _ =>
-       destruct H
-           end.
+Ltac inv_head_step :=
+  repeat match goal with
+  | _ => progress simplify_map_eq/= (* simplify memory stuff *)
+  | H : to_val _ = Some _ |- _ => apply of_to_val in H
+  | H : head_step ?e _ _ _ _ _ |- _ =>
+     try (is_var e; fail 1); (* inversion yields many goals if [e] is a variable
+     and can thus better be avoided. *)
+     inversion H; subst; clear H
+  | H : head_reduce _ ?e _ _ |- _ => (* in our language simply inverting head_step won't produce
+     anything meaningful as we just get a head_reduce back, so we need a further inversion.
+     Moreover, the resulting pure_reduce also needs one last inversion. *)
+    try (is_var e; fail 1);
+    inversion H => //; subst; clear H
+  | H : pure_reduce _ _ _ ?e _ _ _ _ |- _ =>
+    try (is_var e; fail 1);
+    inversion H => //; subst; clear H
+  | H : _ = [] /\ _ = [] |- _ => (* this is to resolve the resulting equalities from head_step. *) 
+     destruct H
+         end.
+
+Locate "RET".
 
 (* See if this works *)
 Lemma twp_getglobal s E id q v:
   [[{ id ↦ { q } v }]] HE_getglobal id @ s; E
   [[{ RET v; id ↦ { q } v }]].
 Proof.
-  (* https://gitlab.mpi-sws.org/iris/iris/blob/master/docs/proof_mode.md *)
+  (* Some explanations on proofmode tactics and patterns are available on 
+       https://gitlab.mpi-sws.org/iris/iris/blob/master/docs/proof_mode.md *)
   (*
     By doing iStartProof we can see that the triple [[{ P }]] e @ s; E [[{ Q }]] is defined as
     forall x: val -> iPropI Σ, P -* (Q -* x v) -* WP e @ s; E [{ v, x v }].
@@ -593,7 +598,7 @@ Proof.
       if we execute e and get v back then Φ v holds.
    *)
   (*
-    This iIntros introduces the proposition Φ into Coq context and the two 'ifs' (by wands) into
+    This iIntros introduces the proposition Φ into Coq context and the two 'ifs' (wands) into
       Iris context and call them Hl and HΦ. So anything inside quotations is going to Iris 
       context while anything inside brackets is going to the Coq context.
   *)
@@ -601,7 +606,7 @@ Proof.
   (*
      This lemma seems to be applicable if our instruction is atomic, can take a step, and does 
        not involve concurrency (which is always true in our language). Upon applying the lemma
-       we are first asked to prove that the instruction is not a value (trivial). Then we getfield       a very sophisticated expression whose meaning is to be deciphered.
+       we are first asked to prove that the instruction is not a value (trivial). Then we get            a very sophisticated expression whose meaning is to be deciphered.
   *)
   iApply twp_lift_atomic_head_step_no_fork; first done.
   (*
@@ -633,7 +638,7 @@ Proof.
       Hl is id ↦ { q } v so that fills  the second assertion directly. On the other hand,
       Hσ is 
 
-        state_interp σ1 κs n 
+        state_interp σ1 κs n
 
       which is somewhat similar t the second component of our heapG_irisG construct,
       whatever that heapG_irisG means; but that definition does say:
@@ -654,16 +659,16 @@ Proof.
    *)
   iDestruct (gen_heap_valid with "Hσ Hl") as %?.
   (*
-    The iSplit tactics is easier -- it basically tries to split up P * Q into two, but only when
-      one of P or Q is persistent (else we'll have to use iSplitl/iSplitr, and also divide our
+    The iSplit tactic is easier -- it basically tries to split up P * Q into two, but only when
+      one of P or Q is persistent (else we'll have to use iSplitL/iSplitR, and also divide our
       Iris hypothesis into two parts and we can only use one part on each side). 
   *)
   iSplit.
   (* The first part asks to prove that HE_getglobal id actually can reduce further. The proof
       is just normal Coq instead of Iris so is left mostly without comments. *)
   - unfold head_reducible_no_obs. inv_head_step. iExists (HE_value v), σ1, [].
-    unfold gmap_of_state in H. destruct σ1 as [[hs ws] locs].
-    inv_head_step. unfold head_step. repeat iSplit => //.
+    destruct σ1 as [[hs ws] locs].
+    simpl in *. unfold head_step. repeat iSplit => //.
     (* iPureIntro takes an Iris goal ⌜ P ⌝ into a Coq goal P. *)
     iPureIntro.
     apply purer_headr. by apply pr_getglobal.
@@ -680,7 +685,7 @@ Proof.
     + iModIntro; repeat (iSplit; first done). iFrame. 
       by iApply "HΦ".
     (* But it can't be a trap since we already have full knowledge from H what v should be. *)    
-    + by rewrite H in H6.  
+    + by rewrite H in H6. (* TODO: fix this bad pattern *)  
 Qed.
 
 (* If we have full ownership then we can also set the value of it. *)
