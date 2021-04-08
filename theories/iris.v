@@ -551,6 +551,8 @@ Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
   fork_post z := True%I;
 }.
 
+(* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
+     (fractional algebra). *)
 Notation "l ↦ { q } v" := (mapsto (L:=id) (V:=option val) l q (Some v%V))
   (at level 20, q at level 5, format "l  ↦ { q } v") : bi_scope.
 
@@ -565,16 +567,13 @@ Ltac inv_head_step :=
   | _ => progress simplify_map_eq/= (* simplify memory stuff *)
   | H : to_val _ = Some _ |- _ => apply of_to_val in H
   | H : head_step ?e _ _ _ _ _ |- _ =>
-     try (is_var e; fail 1); (* inversion yields many goals if [e] is a variable
-     and can thus better be avoided. *)
      inversion H; subst; clear H
   | H : head_reduce _ ?e _ _ |- _ => (* in our language simply inverting head_step won't produce
      anything meaningful as we just get a head_reduce back, so we need a further inversion.
      Moreover, the resulting pure_reduce also needs one last inversion. *)
-    try (is_var e; fail 1);
     inversion H => //; subst; clear H
   | H : pure_reduce _ _ _ ?e _ _ _ _ |- _ =>
-    try (is_var e; fail 1);
+    try (is_var e; fail 1); (* this is the case where we want to avoid inverting if e is a var. *)
     inversion H => //; subst; clear H
   | H : _ = [] /\ _ = [] |- _ => (* this is to resolve the resulting equalities from head_step. *) 
      destruct H
@@ -582,9 +581,23 @@ Ltac inv_head_step :=
 
 Locate "RET".
 
-(* See if this works *)
+(* Iris formulate its propositions using this 'bi' typeclass (bunched logic) and defined a uPred
+     instance. 
+
+   There are a few different notations in parallel for some reason. The first one is
+
+  {{{ P }}} e @ s; E {{{ RET _ ; Q }}}
+
+  s is some 'stuckness' and E is presumably the set of invariant names available (mask). It seems
+    that s and E can also be dropped from a tuple in some cases. Another similar tuple is
+
+  [[{ P }]] e @ s; E [[{ RET _ ; Q }]]
+
+  tbh I haven't found the difference between this (with sq brackets and the above (with braces)).
+*)
+
 Lemma twp_getglobal s E id q v:
-  [[{ id ↦ { q } v }]] HE_getglobal id @ s; E
+  [[{ id ↦ { q } v }]] (HE_getglobal id) @ s; E
   [[{ RET v; id ↦ { q } v }]].
 Proof.
   (* Some explanations on proofmode tactics and patterns are available on 
@@ -635,12 +648,12 @@ Proof.
         gen_heap_ctx σ -* l ↦ { q } v -* ⌜ σ !! l = Some v ⌝
 
     So we are just providing our Hσ and Hl to help resolve the two assertions before wands.
-      Hl is id ↦ { q } v so that fills  the second assertion directly. On the other hand,
+      Hl is id ↦ { q } v so that fills the second assertion directly. On the other hand,
       Hσ is 
 
         state_interp σ1 κs n
 
-      which is somewhat similar t the second component of our heapG_irisG construct,
+      which is somewhat similar to the second component of our heapG_irisG construct,
       whatever that heapG_irisG means; but that definition does say:
 
         state_interp σ κs _ := gen_heap_ctx (gmap_of_state σ);
@@ -688,7 +701,8 @@ Proof.
     + by rewrite H in H6. (* TODO: fix this bad pattern *)  
 Qed.
 
-(* If we have full ownership then we can also set the value of it. *)
+(* If we have full ownership then we can also set the value of it -- provided that the value
+     is not a trap. *)
 Lemma twp_setglobal_value s E id w v:
   v <> HV_trap ->
   [[{ id ↦ { 1 } w }]] HE_setglobal id (HE_value v) @ s; E
@@ -708,9 +722,9 @@ Proof.
     iModIntro. repeat (iSplit => //). by iApply "HΦ".
 Qed.
 
-Lemma twp_setglobal_trap s E id:
-  [[{ True }]] HE_setglobal id (HE_value HV_trap) @ s; E
-  [[{ RET (HV_trap); True }]].
+Lemma twp_setglobal_trap s E id Ψ:
+  [[{ Ψ }]] HE_setglobal id (HE_value HV_trap) @ s; E
+  [[{ RET (HV_trap); Ψ }]].
 Proof.
   iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
   iIntros (σ1 κs n) "Hσ !>".
@@ -721,8 +735,9 @@ Proof.
     iModIntro. repeat (iSplit => //). iFrame. by iApply "HΦ".
 Qed.
 
-Print bi.
-
+(* The following 3 lemmas establish that reducible in Ectxilanguagemixin is the same as 
+     reducible in the sense of taking a head_step in our language, due to having an empty
+     Ectx item only. *)
 Lemma reducible_head_step e σ:
   reducible e σ ->
   exists e' σ', head_step e σ [] e' σ' [].
@@ -746,15 +761,25 @@ Proof.
   - by [].
 Qed.
 
+Lemma hs_red_equiv e σ:
+  reducible e σ <-> exists e' σ', head_step e σ [] e' σ' [].
+Proof.
+  split; first by apply reducible_head_step.
+  intros. destruct H as [?[??]]. by eapply head_step_reducible.
+Qed.
+ 
 (* Manually deal with evaluation contexts. Supposedly this proof should be similar to
      wp_bind. *)
 (*
-  Technically this lemma should also be correct without the v ≠ HV_trap, but Hev can't be 
-    simplfied without it somehow.
+  Technically this lemma might be correct without the v ≠ HV_trap, but Hev can't be 
+    simplfied without it somehow. Actually will this lemma be true without the v ≠ trap part?
+ *)
+(*
+  {P} e {Q} ≡ P -∗ WP e {Q}
 *)
 Lemma twp_setglobal_reduce s E id e Ψ Φ:
   WP e @ s; E {{ v, ⌜ v <> HV_trap ⌝ ∗ Ψ v }} ∗
-  (∀ v, (( ⌜ v ≠ HV_trap ⌝ ∗ Ψ v) -∗ WP (HE_setglobal id (HE_value v)) @ s; E {{ Φ }})) ⊢
+  (∀ v, (( ⌜ v <> HV_trap ⌝ ∗ Ψ v) -∗ WP (HE_setglobal id (HE_value v)) @ s; E {{ Φ }})) ⊢
   WP (HE_setglobal id e) @ s; E {{ Φ }}.
 Proof.
   iIntros "[Hev Hv]".
@@ -762,7 +787,7 @@ Proof.
     iLöb does a Löb induction. In Iris the Löb rule is:
       Q /\ ▷P ⊢ P -> Q ⊢ P
     However the result of applying an iLob seems to be vastly different and the effect is to
-      be understood.
+      be understood. In fact why should the Löb rule even be true?
   *)
   iLöb as "IH" forall (E e Φ).
   rewrite wp_unfold /wp_pre /=.               
@@ -773,107 +798,41 @@ Proof.
   (* How to resolve this fancy update modality? *)
   (* Update: using iMod is fine, just that in this case Iris doens't automatically
        instantiate the variables for Hev for some reasons. *)
+  (* $! means instantiate the hypothesis with the following variables. *)
   iMod ("Hev" $! σ1 κ κs n with "Hσ") as "[% H]".
   iModIntro; iSplit.
   {
     destruct s; eauto.
     (* There are some weird consequences with our choice of having 0 ectx item while
          still using the ectxi_language framework: reducible is now equivalent to a head_step. *)
-    apply reducible_head_step in H. destruct H as [e' [σ' H]].
+    apply hs_red_equiv in H. destruct H as [e' [σ' H]].
     iPureIntro.
-    apply head_step_reducible with (e' := (HE_setglobal id e')) (σ' := σ').
-    unfold head_step in *. repeat split => //.
-    repeat destruct H as [??].
-    apply purer_headr.
+    apply hs_red_equiv. exists (HE_setglobal id e'), σ'.
+    inv_head_step.
+    unfold head_step; repeat split => //.
     by apply pr_setglobal_step.
   }
   iIntros (e2 σ2 efs Hstep).
   inversion Hstep; destruct K; last by []; simpl in *; subst.
   inv_head_step.
   (* We need to manually establish this relation for the next modality to be resolved,
-       unlike the proof to wp_bind. *)
+       unlike the proof to wp_bind -- this is because our head_step is not directly the opsem. *)
   assert (prim_step e (hs, s0, locs) [] e' (hs', s', locs') []) as Hprim.
   {
     by apply Ectx_step with (K := []) (e1' := e) (e2' := e').
   }
+  (* The pattern "[//]" seems to mean automaitcally deduce the required assumption for 
+       elimnating the modality using H (like inserting an eauto). *)
   iMod ("H" $! e' (hs', s', locs') [] with "[//]") as "H". iIntros "!>!>".
   iMod "H". iModIntro. iSimpl in "H".
   iDestruct "H" as "[Hheap H]".
   iSplitL "Hheap"; first by eauto.
   iSplitL; last by eauto.
   iDestruct "H" as "[H _]".
-  (* "[$]" seems to mean 'find the useful hypotheses by yourself, as this should be normally
-    resolved by with "Hv H" *)
+  (* "[$]" seems to mean 'find the useful hypotheses by yourself', as this can be normally
+    resolved by with "Hv H". Interestingly enough, "[//]" won't work. What's the difference? *)
   by iApply ("IH" with "[$]").
   (* Now we've actually proved this thing finally.. *)  
 Qed.
 
-  (*
-Definition locof (n : nat) := {| loc_car := (Z.of_nat n) |}.
-
-Section lifting.
-Context `{!heapG Σ}.
-Implicit Types σ : state.
-
-Lemma twp_load s E imm q v :
-  [[{ (locof imm) ↦{q} v }]] [Basic (Get_local imm)] @ s; E [[{ RET v; (locof imm) ↦{q} v }]].
-Proof.
-  iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
-  iIntros (σ1 κs n) "Hσ !>". iDestruct (@gen_heap_valid with "Hσ Hl") as %?.
-  iSplit.
-  inv_head_step.
-  admit.
-  iIntros (κ v2 σ2 efs Hstep); inv_head_step.
-  move: H1 => [H1 H2].
-  iModIntro; iSplit=> //; iSplit=> //.
-  iSplitR.
-  admit.
-  unfold from_option.
-  inversion H0 => {H0}; subst.
-  { inversion H3 => {H3}; subst.
-    { exfalso.
-      admit. }
-    { exfalso.
-      admit. }
-    { simpl.
-      clear H0.
-      apply lfilled_Ind_Equivalent in H1.
-      inversion H1; subst.
-      { admit. }
-    }
-  }
-  { simpl.
-    exfalso.
-    move: H3.
-    rewrite app_singleton => H3.
-    move: H3 => [[H3 H4]|[H3 H4]]; discriminate. }
-  { admit. }
-  { admit. }
-  { exfalso.
-  move: H3.
-  rewrite app_nil => [[_ H4]].
-  discriminate. }
-Admitted.
-
-Lemma twp_wp_step s E e P Φ :
-  TCEq (to_val e) None →
-  ▷ P -∗
-  WP e @ s; E [{ v, P ={E}=∗ Φ v }] -∗ WP e @ s; E {{ Φ }}.
-Proof.
-  iIntros (?) "HP Hwp".
-  iApply (wp_step_fupd _ _ E _ P with "[HP]"); [auto..|].
-  { by inversion H; subst. }
-  by iApply twp_wp.
-Qed.
-
-Lemma wp_load s E imm q v :
-  {{{ ▷ locof imm ↦{q} v }}} [Basic (Get_local imm)] @ s; E {{{ RET v; locof imm ↦{q} v }}}.
-Proof.
-  iIntros (Φ) ">H HΦ". iApply (twp_wp_step with "HΦ").
-  iApply (twp_load with "H"); [auto..|]; iIntros "H HΦ". by iApply "HΦ".
-Qed.
-
 End lifting.
-
-
-*)
