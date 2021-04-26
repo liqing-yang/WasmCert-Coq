@@ -535,13 +535,71 @@ Canonical Structure wasm_lang := LanguageOfEctx wasm_ectx_lang.
 
 Definition proph_id := unit. (* ??? *)
 
+Inductive loc : Type :=
+  | loc_host_var: N -> loc
+  | loc_local_var: N -> loc
+  | loc_wasm_func: N -> loc
+  | loc_wasm_tab: N -> loc
+  | loc_wasm_mem: N -> loc
+  | loc_wasm_glob: N -> loc
+.
+
+Global Instance loc_eq_decision : EqDecision loc.
+Proof. solve_decision. Defined.
+
+Global Instance loc_inhabited : Inhabited loc := populate (loc_host_var 0%N).
+
+Definition loc_constructor_count := 6%N.
+
+Definition encode_loc (l : loc) : N :=
+  match l with
+  | loc_host_var n => loc_constructor_count * n + 0%N
+  | loc_local_var n => loc_constructor_count * n + 1%N
+  | loc_wasm_func n => loc_constructor_count * n + 2%N
+  | loc_wasm_tab n => loc_constructor_count * n + 3%N
+  | loc_wasm_mem n => loc_constructor_count * n + 4%N
+  | loc_wasm_glob n => loc_constructor_count * n + 5%N
+  end.
+
+Definition decode_loc (n : N) : option loc :=
+  let (q, r) := N.div_eucl n loc_constructor_count in
+  match r with
+  | 0%N => Some (loc_host_var q)
+  | 1%N => Some (loc_local_var q)
+  | 2%N => Some (loc_wasm_func q)
+  | 3%N => Some (loc_wasm_tab q)
+  | 4%N => Some (loc_wasm_mem q)
+  | 5%N => Some (loc_wasm_glob q)
+  | _ => None
+  end.
+
+Lemma mult_mod (a b r: N):
+  (r < a)%N -> N.div_eucl (a*b+r) a = (b,r).
+Proof.
+  move => Hlt. unfold N.div_eucl.
+  destruct a as [|a] => //=; destruct b as [|b] => //=; destruct r as [|r] => //=.
+  
+  
+Admitted.
+
+Global Instance loc_countable : Countable loc.
+Proof.
+  apply (inj_countable encode_loc decode_loc).
+  intros l. destruct l; unfold encode_loc, decode_loc; by rewrite mult_mod.
+Defined.
+  
 Class heapG Σ := HeapG {
   heapG_invG : invG Σ;
-  heapG_gen_heapG :> gen_heapG id (option val) Σ;
+  heapG_gen_heapG :> gen_heapG loc (option val) Σ;
   heapG_proph_mapG :> proph_mapG proph_id (val * val) Σ;
 }.
 
 (* Only considering the host variable store for now *)
+(*
+   In the future we would need to add the other resources, including local vars and 
+     items in wasm store. If we're to take a product of all these separate heaps, what's the
+     best way?
+*)
 Definition gmap_of_state (σ : state) : gmap id (option val) :=
   let (hss, locs) := σ in let (hs, s) := hss in hs.
 
@@ -552,9 +610,12 @@ Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
 }.
 
 (* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
-     (fractional algebra). *)
-Notation "l ↦ { q } v" := (mapsto (L:=id) (V:=option val) l q (Some v%V))
-  (at level 20, q at level 5, format "l  ↦ { q } v") : bi_scope.
+     (fractional algebra). 
+   We really only need either 0/1 permission for our language, though. *)
+Notation "l ↦{ q } v" := (mapsto (L:=id) (V:=option val) l q (Some v%V))
+   (at level 20, q at level 5, format "l  ↦{ q } v") : bi_scope.
+Notation "l ↦ v" := (mapsto (L:=id) (V:=option val) l 1 (Some v%V))
+   (at level 20, format "l ↦ v") : bi_scope.
 
 Section lifting.
 
@@ -579,6 +640,39 @@ Ltac inv_head_step :=
      destruct H
          end.
 
+(* The following 3 lemmas establish that reducible in Ectxilanguagemixin is the same as 
+     reducible in the sense of taking a head_step in our language, due to having an empty
+     Ectx item only. *)
+Lemma reducible_head_step e σ:
+  reducible e σ ->
+  exists e' σ', head_step e σ [] e' σ' [].
+Proof.
+  intro H. unfold reducible in H.
+  do 4 destruct H as [??].
+  inversion H; simpl in *; subst.
+  destruct K => //.
+  unfold fill, ectxi_language.fill_item, fill_item in *. simpl in *. inversion H2.
+  destruct H1; subst. eauto.
+Qed.
+
+Lemma head_step_reducible e σ e' σ':
+  head_step e σ [] e' σ' [] ->
+  reducible e σ.
+Proof.
+  intro H. unfold reducible => /=.
+  exists [], e', σ', []. eapply Ectx_step => /=.
+  - instantiate (1 := e). by instantiate (1 := []).
+  - by instantiate (1 := e').
+  - by [].
+Qed.
+
+Lemma hs_red_equiv e σ:
+  reducible e σ <-> exists e' σ', head_step e σ [] e' σ' [].
+Proof.
+  split; first by apply reducible_head_step.
+  intros. destruct H as [?[??]]. by eapply head_step_reducible.
+Qed.
+
 Locate "RET".
 
 (* Iris formulate its propositions using this 'bi' typeclass (bunched logic) and defined a uPred
@@ -594,11 +688,18 @@ Locate "RET".
   [[{ P }]] e @ s; E [[{ RET _ ; Q }]]
 
   tbh I haven't found the difference between this (with sq brackets and the above (with braces)).
+ *)
+
+(*
+ [[ ]] -- total wp, can't do much (bad)
+ {{ }}
 *)
 
-Lemma twp_getglobal s E id q v:
-  [[{ id ↦ { q } v }]] (HE_getglobal id) @ s; E
-  [[{ RET v; id ↦ { q } v }]].
+Print stuckness.
+
+Lemma wp_getglobal s E id q v:
+  {{{ id ↦{ q } v }}} (HE_getglobal id) @ s; E
+  {{{ RET v; id ↦{ q } v }}}.
 Proof.
   (* Some explanations on proofmode tactics and patterns are available on 
        https://gitlab.mpi-sws.org/iris/iris/blob/master/docs/proof_mode.md *)
@@ -619,14 +720,15 @@ Proof.
   (*
      This lemma seems to be applicable if our instruction is atomic, can take a step, and does 
        not involve concurrency (which is always true in our language). Upon applying the lemma
-       we are first asked to prove that the instruction is not a value (trivial). Then we get            a very sophisticated expression whose meaning is to be deciphered.
+       we are first asked to prove that the instruction is not a value (trivial). Then we get            
+       a very sophisticated expression whose meaning is to be deciphered.
   *)
-  iApply twp_lift_atomic_head_step_no_fork; first done.
+  iApply wp_lift_atomic_head_step_no_fork; first done.
   (*
     This is just another iIntros although with something new: !>. This !> pattern is for
       removing the ={E}=* from our goal (this symbol represents an update modality).
   *)
-  iIntros (σ1 κs n) "Hσ !>".
+  iIntros (σ1 κ κs n) "Hσ !>".
   (*
     A lot is going on here. The %? pattern in the end actually consists of two things: 
       it should be read as first the %H pattern, which is for moving the destructed hypothesis
@@ -679,7 +781,7 @@ Proof.
   iSplit.
   (* The first part asks to prove that HE_getglobal id actually can reduce further. The proof
       is just normal Coq instead of Iris so is left mostly without comments. *)
-  - unfold head_reducible_no_obs. inv_head_step. iExists (HE_value v), σ1, [].
+  - unfold head_reducible. inv_head_step. iExists [], (HE_value v), σ1, [].
     destruct σ1 as [[hs ws] locs].
     simpl in *. unfold head_step. repeat iSplit => //.
     (* iPureIntro takes an Iris goal ⌜ P ⌝ into a Coq goal P. *)
@@ -693,9 +795,9 @@ Proof.
        reduction result e2 is a value v, then we need to prove Φ v; else, if it's not a value,
        we will need to be ready to prove False (why?).
   *)
-  - iIntros (κ v2 σ2 efs Hstep); inv_head_step.
+  - iIntros (e2 σ2 efs Hstep); inv_head_step.
     (* There are two cases -- either the lookup result v is an actual valid value, or a trap. *)
-    + iModIntro; repeat (iSplit; first done). iFrame. 
+    + repeat iModIntro; repeat (iSplit; first done). iFrame. 
       by iApply "HΦ".
     (* But it can't be a trap since we already have full knowledge from H what v should be. *)    
     + by rewrite H in H6. (* TODO: fix this bad pattern *)  
@@ -703,13 +805,13 @@ Qed.
 
 (* If we have full ownership then we can also set the value of it -- provided that the value
      is not a trap. *)
-Lemma twp_setglobal_value s E id w v:
+Lemma wp_setglobal_value s E id w v:
   v <> HV_trap ->
-  [[{ id ↦ { 1 } w }]] HE_setglobal id (HE_value v) @ s; E
-  [[{ RET v; id ↦ { 1 } v }]].
+  {{{ id ↦ w }}} HE_setglobal id (HE_value v) @ s; E
+  {{{ RET v; id ↦ v }}}.
 Proof.
   intros HNTrap.
-  iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
+  iIntros (Φ) "Hl HΦ". iApply wp_lift_atomic_head_step_no_fork; first done.
   iIntros (σ1 κs n) "Hσ !>". iDestruct (gen_heap_valid with "Hσ Hl") as %?.
   iSplit.
   - unfold head_reducible_no_obs. inv_head_step. 
@@ -735,38 +837,6 @@ Proof.
     iModIntro. repeat (iSplit => //). iFrame. by iApply "HΦ".
 Qed.
 
-(* The following 3 lemmas establish that reducible in Ectxilanguagemixin is the same as 
-     reducible in the sense of taking a head_step in our language, due to having an empty
-     Ectx item only. *)
-Lemma reducible_head_step e σ:
-  reducible e σ ->
-  exists e' σ', head_step e σ [] e' σ' [].
-Proof.
-  intro H. unfold reducible in H.
-  do 4 destruct H as [??].
-  inversion H; simpl in *; subst.
-  destruct K => //.
-  unfold fill, ectxi_language.fill_item, fill_item in *. simpl in *. inversion H2.
-  destruct H1; subst. eauto.
-Qed.
-
-Lemma head_step_reducible e σ e' σ':
-  head_step e σ [] e' σ' [] ->
-  reducible e σ.
-Proof.
-  intro H. unfold reducible => /=.
-  exists [], e', σ', []. eapply Ectx_step => /=.
-  - instantiate (1 := e). by instantiate (1 := []).
-  - by instantiate (1 := e').
-  - by [].
-Qed.
-
-Lemma hs_red_equiv e σ:
-  reducible e σ <-> exists e' σ', head_step e σ [] e' σ' [].
-Proof.
-  split; first by apply reducible_head_step.
-  intros. destruct H as [?[??]]. by eapply head_step_reducible.
-Qed.
  
 (* Manually deal with evaluation contexts. Supposedly this proof should be similar to
      wp_bind. *)
@@ -775,7 +845,13 @@ Qed.
     simplfied without it somehow. Actually will this lemma be true without the v ≠ trap part?
  *)
 (*
-  {P} e {Q} ≡ P -∗ WP e {Q}
+  {P} e {Q} ≡ P -∗ WP e {Q} ?
+
+  also get unfolded by iStartProof to
+
+  P -∗ (Q -∗ Φ v) -∗ WP e {v. Φ v}
+
+  But page 139 of ILN says they are almost equivalent (and indeed equivalent when e is not a val).
 *)
 Lemma twp_setglobal_reduce s E id e Ψ Φ:
   WP e @ s; E {{ v, ⌜ v <> HV_trap ⌝ ∗ Ψ v }} ∗
@@ -786,8 +862,11 @@ Proof.
   (*
     iLöb does a Löb induction. In Iris the Löb rule is:
       Q /\ ▷P ⊢ P -> Q ⊢ P
-    However the result of applying an iLob seems to be vastly different and the effect is to
-      be understood. In fact why should the Löb rule even be true?
+
+    What iLöb does is basically adding another hypothesis IH which is the entire current goal
+      (including the premises), but with a later modality. It is then sufficient to prove the 
+      current goal given that the goal holds later -- so Löb induction is a coinduction.
+      http://adam.chlipala.net/cpdt/html/Coinductive.html
   *)
   iLöb as "IH" forall (E e Φ).
   rewrite wp_unfold /wp_pre /=.               
@@ -834,5 +913,16 @@ Proof.
   by iApply ("IH" with "[$]").
   (* Now we've actually proved this thing finally.. *)  
 Qed.
+
+(*
+Lemma twp_if_true s E id q v e1 e2 Φ:
+  WP e1 @ s; E {{ Φ }} ∗
+  id ↦{ q } v ∗
+  ⌜ v ≠ (HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m))) ⌝ ⊢
+  WP (HE_if id e1 e2) @ s; E {{ Φ }}.
+Proof.
+  iIntros "[Htrue [Hid Hv]]".
+Abort.
+ *)
 
 End lifting.
