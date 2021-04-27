@@ -573,35 +573,83 @@ Definition decode_loc (n : N) : option loc :=
   | _ => None
   end.
 
-Lemma mult_mod (a b r: N):
+Lemma mult_div_eucl (a b r: N):
   (r < a)%N -> N.div_eucl (a*b+r) a = (b,r).
 Proof.
-  move => Hlt. unfold N.div_eucl.
-  destruct a as [|a] => //=; destruct b as [|b] => //=; destruct r as [|r] => //=.
-  
-  
 Admitted.
 
 Global Instance loc_countable : Countable loc.
 Proof.
   apply (inj_countable encode_loc decode_loc).
-  intros l. destruct l; unfold encode_loc, decode_loc; by rewrite mult_mod.
+  intros l. destruct l; unfold encode_loc, decode_loc; by rewrite mult_div_eucl.
 Defined.
-  
+
+Inductive heap_val : Type :=
+  | hval_val: val -> heap_val
+  | hval_func: function_closure -> heap_val
+  | hval_tab: tableinst -> heap_val
+  | hval_mem: memory -> heap_val
+  | hval_glob: global -> heap_val.
+
 Class heapG Σ := HeapG {
   heapG_invG : invG Σ;
-  heapG_gen_heapG :> gen_heapG loc (option val) Σ;
-  heapG_proph_mapG :> proph_mapG proph_id (val * val) Σ;
+  heapG_gen_heapG :> gen_heapG loc (option heap_val) Σ;
+  (* not sure what this does, taken out for now *)
+(*  heapG_proph_mapG :> proph_mapG proph_id (val * val) Σ;*)
 }.
 
-(* Only considering the host variable store for now *)
+Definition heap_gmap_of_list {T: Type} (l: list T) (f: N -> loc) (g: T -> heap_val) : gmap loc (option heap_val) :=
+  list_extra.fold_lefti
+    (fun (i : nat) (pm : gmap loc (option heap_val)) (x: T) =>
+       map_insert (f (N.of_nat i)) (Some (g x)) pm)
+    l ∅.
+
+Definition fselect {T: Type} (x1 x2: T) : option T := Some x1.
+
+Definition gmap_of_store_func (s : store_record) : gmap loc (option heap_val) :=
+  heap_gmap_of_list s.(s_funcs) (fun n => loc_wasm_func n) (fun x => hval_func x).
+
+Definition gmap_of_store_tab (s : store_record) : gmap loc (option heap_val) :=
+  heap_gmap_of_list s.(s_tables) (fun n => loc_wasm_tab n) (fun x => hval_tab x).
+
+Definition gmap_of_store_mem (s : store_record) : gmap loc (option heap_val) :=
+  heap_gmap_of_list s.(s_mems) (fun n => loc_wasm_mem n) (fun x => hval_mem x).
+
+Definition gmap_of_store_glob (s : store_record) : gmap loc (option heap_val) :=
+  heap_gmap_of_list s.(s_globals) (fun n => loc_wasm_glob n) (fun x => hval_glob x).
+
+Fixpoint gmap_union_list {X Y: Type} (EqDecision0 : EqDecision X) (H : Countable X) (f: Y -> Y -> option Y) (l: list (gmap X Y)): gmap X Y :=
+  match l with
+  | [::] => ∅
+  | m :: l' => union_with f m (gmap_union_list f l')
+  end.
+
+Definition gmap_of_store (s : store_record) : gmap loc (option heap_val) :=
+  gmap_union_list fselect [::gmap_of_store_func s;
+                           gmap_of_store_tab s;
+                           gmap_of_store_mem s;
+                           gmap_of_store_glob s].
+
+Definition gmap_of_locs (locs: list host_value) : gmap loc (option heap_val) :=
+  heap_gmap_of_list locs (fun n => loc_local_var n) (fun x => hval_val x).
+
 (*
-   In the future we would need to add the other resources, including local vars and 
-     items in wasm store. If we're to take a product of all these separate heaps, what's the
-     best way?
+  TODO: need to deal with hs by finding how to compose gmap with normal funcs, then add 
+        hs to the gmap_of_state predicate.
+Definition gmap_of_hs (hs: host_state) : gmap loc (option heap_val) :=
+  (fun x => match x with
+         | loc_host_var id => id
+         | _ => 0%N
+         end
+  ) ∘ hs.
 *)
-Definition gmap_of_state (σ : state) : gmap id (option val) :=
-  let (hss, locs) := σ in let (hs, s) := hss in hs.
+
+Definition gmap_of_state (σ : state) : gmap loc (option heap_val) :=
+  let (hss, locs) := σ in
+  let (hs, s) := hss in
+  gmap_union_list fselect
+                  [::(gmap_of_store s);
+                  gmap_of_locs locs].
 
 Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
   iris_invG := heapG_invG;
@@ -612,9 +660,9 @@ Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
 (* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
      (fractional algebra). 
    We really only need either 0/1 permission for our language, though. *)
-Notation "l ↦{ q } v" := (mapsto (L:=id) (V:=option val) l q (Some v%V))
+Notation "l ↦{ q } v" := (mapsto (L:=loc) (V:=option heap_val) l q (Some v%V))
    (at level 20, q at level 5, format "l  ↦{ q } v") : bi_scope.
-Notation "l ↦ v" := (mapsto (L:=id) (V:=option val) l 1 (Some v%V))
+Notation "l ↦ v" := (mapsto (L:=loc) (V:=option heap_val) l 1 (Some v%V))
    (at level 20, format "l ↦ v") : bi_scope.
 
 Section lifting.
@@ -673,8 +721,6 @@ Proof.
   intros. destruct H as [?[??]]. by eapply head_step_reducible.
 Qed.
 
-Locate "RET".
-
 (* Iris formulate its propositions using this 'bi' typeclass (bunched logic) and defined a uPred
      instance. 
 
@@ -695,11 +741,9 @@ Locate "RET".
  {{ }}
 *)
 
-Print stuckness.
-
 Lemma wp_getglobal s E id q v:
-  {{{ id ↦{ q } v }}} (HE_getglobal id) @ s; E
-  {{{ RET v; id ↦{ q } v }}}.
+  {{{ (loc_host_var id) ↦{ q } (hval_val v) }}} (HE_getglobal id) @ s; E
+  {{{ RET v; (loc_host_var id) ↦{ q } (hval_val v) }}}.
 Proof.
   (* Some explanations on proofmode tactics and patterns are available on 
        https://gitlab.mpi-sws.org/iris/iris/blob/master/docs/proof_mode.md *)
