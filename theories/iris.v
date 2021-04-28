@@ -600,8 +600,8 @@ Class heapG Σ := HeapG {
 
 Definition heap_gmap_of_list {T: Type} (l: list T) (f: N -> loc) (g: T -> heap_val) : gmap loc (option heap_val) :=
   list_extra.fold_lefti
-    (fun (i : nat) (pm : gmap loc (option heap_val)) (x: T) =>
-       map_insert (f (N.of_nat i)) (Some (g x)) pm)
+    (fun (i : nat) (gm : gmap loc (option heap_val)) (x: T) =>
+       map_insert (f (N.of_nat i)) (Some (g x)) gm)
     l ∅.
 
 Definition fselect {T: Type} (x1 x2: T) : option T := Some x1.
@@ -633,23 +633,61 @@ Definition gmap_of_store (s : store_record) : gmap loc (option heap_val) :=
 Definition gmap_of_locs (locs: list host_value) : gmap loc (option heap_val) :=
   heap_gmap_of_list locs (fun n => loc_local_var n) (fun x => hval_val x).
 
-(*
-  TODO: need to deal with hs by finding how to compose gmap with normal funcs, then add 
-        hs to the gmap_of_state predicate.
-Definition gmap_of_hs (hs: host_state) : gmap loc (option heap_val) :=
-  (fun x => match x with
-         | loc_host_var id => id
-         | _ => 0%N
-         end
-  ) ∘ hs.
-*)
+(* 
+  Maybe this already exists in the standard library but I can't find it.
+
+  Given functions f: X -> T1, g: Y -> T2, and a gmap m: X -> Y, construct a new gmap 
+     m': T1 -> T2 that completes the following commutative square:
+
+  X  ---m---> Y
+  |           |
+  f           g
+  ↓           ↓
+  T1 ---m'--> T2
+
+  This is for changing the host variable store hs: id -> val to a component in the heap, which
+    is a gmap h: loc -> heap_val.
+ *)
+
+Definition f_g_gmap_transform {T1 T2 X Y: Type} {EqDecisionX: EqDecision X} {HX: Countable X} {EqDecisionT: EqDecision T1} {HT: Countable T1} (f: X -> T1) (g: Y -> T2) (m: gmap X Y) : gmap T1 T2 :=
+  let dom_m := (gset_elements (gset_dom m)) in
+  fold_left
+    (fun (gm : gmap T1 T2) (x: X) => 
+       match m !! x with
+       | Some y => map_insert (f x) (g y) gm
+       | None => gm (* This should never happen *)
+       end
+    )
+    dom_m ∅.
+
+Lemma f_g_gmap_transform_spec {T1 T2 X Y: Type} {EqDecisionX: EqDecision X} {HX: Countable X} {EqDecisionT: EqDecision T1} {HT: Countable T1} (f: X -> T1) (g: Y -> T2) (m: gmap X Y) (x: X) (y: Y):
+  ((f_g_gmap_transform f g m) !! (f x)) = option_map g (m !! x).
+Proof.
+Admitted.
+
+Definition heap_gmap_of_hs (hs: host_state) : gmap loc (option heap_val) :=
+  f_g_gmap_transform (fun x => loc_host_var x) (option_map (fun y => hval_val y)) hs.
 
 Definition gmap_of_state (σ : state) : gmap loc (option heap_val) :=
   let (hss, locs) := σ in
   let (hs, s) := hss in
+  (* TODO: maybe better to make a disjoint_union predicate to make lookup lemmas easier. *)
   gmap_union_list fselect
                   [::(gmap_of_store s);
-                  gmap_of_locs locs].
+                  gmap_of_locs locs;
+                  heap_gmap_of_hs hs].
+
+Lemma gmap_of_state_lookup_hs: forall hs s locs id,
+    (gmap_of_state (hs, s, locs)) !! (loc_host_var id) = option_map (option_map (fun v => hval_val v)) (hs !! id).
+Proof.
+  move => hs s locs id.
+Admitted.
+
+Lemma gmap_of_state_lookup_locs: forall hs s locs n,
+    (gmap_of_state (hs, s, locs)) !! (loc_local_var n) = option_map (fun v => Some (hval_val v)) (List.nth_error locs (N.to_nat n)).
+Proof.
+  move => hs s locs n.
+Admitted.
 
 Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
   iris_invG := heapG_invG;
