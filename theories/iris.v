@@ -24,7 +24,7 @@ From iris.heap_lang Require Import locations.
 
 Definition expr := host_expr.
 Definition val := host_value.
-(* We have to overwrite the definition here for Iris's usage of gmap for heaps. *)
+(* Use gmap to specify the host variable store instead. *)
 Definition host_state := gmap id (option val).
 Definition state : Type := host_state * store_record * (list host_value).
 Definition observation := unit. (* TODO: ??? *)
@@ -301,7 +301,6 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       list_extra.those2 (map (fun id => hs !! id) ids) = Some vs ->
       pure_reduce hs s locsf (HE_host_frame tn locs (HE_seq (HE_return ids) e)) hs s locsf (HE_value (HV_list vs))
    
-
 (* TODO: needs all the host_expr reduction steps: compile, instantiate, etc. *)
 (* TODO: needs restructuring to make sense *)
 with wasm_reduce : host_state -> store_record -> datatypes.frame -> list administrative_instruction ->
@@ -516,9 +515,10 @@ Proof.
 Qed.
 
 (* empty definitions just to enable the tactics in EctxiLanguageMixin as almost all prebuilt
-     tactics could only work for EctxilanguageMixin*)
+     tactics could only work for EctxilanguageMixin *)
 Inductive ectx_item := .
 
+(* as a result, this is just a dummy definition. *)
 Definition fill_item (Ki: ectx_item) (e: expr) : expr := e.
 
 Lemma wasm_mixin : EctxiLanguageMixin of_val to_val fill_item head_step.
@@ -604,8 +604,6 @@ Definition heap_gmap_of_list {T: Type} (l: list T) (f: N -> loc) (g: T -> heap_v
        map_insert (f (N.of_nat i)) (Some (g x)) gm)
     l ∅.
 
-Definition fselect {T: Type} (x1 x2: T) : option T := Some x1.
-
 Definition gmap_of_store_func (s : store_record) : gmap loc (option heap_val) :=
   heap_gmap_of_list s.(s_funcs) (fun n => loc_wasm_func n) (fun x => hval_func x).
 
@@ -618,21 +616,16 @@ Definition gmap_of_store_mem (s : store_record) : gmap loc (option heap_val) :=
 Definition gmap_of_store_glob (s : store_record) : gmap loc (option heap_val) :=
   heap_gmap_of_list s.(s_globals) (fun n => loc_wasm_glob n) (fun x => hval_glob x).
 
-Fixpoint gmap_union_list {X Y: Type} (EqDecision0 : EqDecision X) (H : Countable X) (f: Y -> Y -> option Y) (l: list (gmap X Y)): gmap X Y :=
-  match l with
-  | [::] => ∅
-  | m :: l' => union_with f m (gmap_union_list f l')
-  end.
-
 Definition gmap_of_store (s : store_record) : gmap loc (option heap_val) :=
-  gmap_union_list fselect [::gmap_of_store_func s;
-                           gmap_of_store_tab s;
-                           gmap_of_store_mem s;
-                           gmap_of_store_glob s].
+  map_union (gmap_of_store_func s)
+            (map_union (gmap_of_store_tab s)
+                       (map_union (gmap_of_store_mem s)
+                                 (gmap_of_store_glob s))).
 
 Definition gmap_of_locs (locs: list host_value) : gmap loc (option heap_val) :=
   heap_gmap_of_list locs (fun n => loc_local_var n) (fun x => hval_val x).
 
+(*
 (* 
   Maybe this already exists in the standard library but I can't find it.
 
@@ -647,35 +640,96 @@ Definition gmap_of_locs (locs: list host_value) : gmap loc (option heap_val) :=
 
   This is for changing the host variable store hs: id -> val to a component in the heap, which
     is a gmap h: loc -> heap_val.
+
+  Note that f needs to be injective.
  *)
 
-Definition f_g_gmap_transform {T1 T2 X Y: Type} {EqDecisionX: EqDecision X} {HX: Countable X} {EqDecisionT: EqDecision T1} {HT: Countable T1} (f: X -> T1) (g: Y -> T2) (m: gmap X Y) : gmap T1 T2 :=
-  let dom_m := (gset_elements (gset_dom m)) in
-  fold_left
-    (fun (gm : gmap T1 T2) (x: X) => 
-       match m !! x with
-       | Some y => map_insert (f x) (g y) gm
-       | None => gm (* This should never happen *)
-       end
-    )
-    dom_m ∅.
+Print map_imap.
 
-Lemma f_g_gmap_transform_spec {T1 T2 X Y: Type} {EqDecisionX: EqDecision X} {HX: Countable X} {EqDecisionT: EqDecision T1} {HT: Countable T1} (f: X -> T1) (g: Y -> T2) (m: gmap X Y) (x: X) (y: Y):
-  ((f_g_gmap_transform f g m) !! (f x)) = option_map g (m !! x).
+Print Inj.
+
+(* Better implementation using gmap_to_list and list_to_map *)
+Definition f_g_gmap_transform {T1 T2 X Y: Type} {EqDecisionX: EqDecision X} {HX: Countable X} {EqDecisionT: EqDecision T1} {HT: Countable T1} (f: X -> T1) (g: Y -> T2) {Inj0: Inj (=) (=) f} (m: gmap X Y) : gmap T1 T2 :=
+  let lp := map_to_list m in
+  let lp' := fmap (fun p => match p with
+                       | (x, y) => (f x, g y)
+                       end) lp in
+  list_to_map lp'.
+  
+Lemma elem_of_fmap_list {X Y: Type} (f: X -> Y) (l : list X) (y: Y):
+    y ∈ fmap f l <-> ∃ x, x ∈ l /\ f x = y.
 Proof.
+  induction l => //=.
+  - split.
+    + move => H. by inversion H.
+    + move => [x [He _]]. by inversion He.
+  - split.
+    + move => H. Search elem_of.
 Admitted.
-
+  
+(* I hope there's a way to not have to specify all the implicit types/conditions *)
+Lemma f_g_gmap_transform_spec {T1 T2 X Y: Type} {EqDecisionX: EqDecision X} {HX: Countable X} {EqDecisionT: EqDecision T1} {HT: Countable T1} (f: X -> T1) (g: Y -> T2) {Inj0: Inj (=) (=) f} (m: gmap X Y) (x: X) (y: Y):
+  (f_g_gmap_transform f g m) !! (f x) = option_map g (m !! x).
+Proof.
+  remember ((f_g_gmap_transform f g m) !! (f x)) as res_lookup eqn: Hlookup; symmetry in Hlookup.
+  destruct res_lookup; unfold f_g_gmap_transform, option_map in * => /=.
+  - apply elem_of_list_to_map_2 in Hlookup.
+    apply elem_of_fmap_list in Hlookup. destruct Hlookup as [xy [Hl Hm]].
+    destruct xy; simpl in *. inversion Hm; subst; clear Hm.
+    
+    
+    apply in_map_iff in Hlookup.
+Admitted.
+*)
+  
 Definition heap_gmap_of_hs (hs: host_state) : gmap loc (option heap_val) :=
-  f_g_gmap_transform (fun x => loc_host_var x) (option_map (fun y => hval_val y)) hs.
+  list_to_map
+  (fmap (fun p => match p with | (x, y) => (loc_host_var x, option_map (fun y => hval_val y) y) end)
+        (map_to_list hs)).
+
+Lemma heapg_of_hs_lookup (hs: host_state) (i: id):
+  (heap_gmap_of_hs hs) !! (loc_host_var i) = option_map (option_map (fun y => hval_val y)) (hs !! i).
+Proof.
+  remember ((heap_gmap_of_hs hs) !! (loc_host_var i)) as lookup_res eqn: Hlookup; symmetry in Hlookup.
+  unfold heap_gmap_of_hs, option_map in *.
+  destruct lookup_res.
+  - apply elem_of_list_to_map in Hlookup.
+    + apply elem_of_list_fmap in Hlookup.
+      destruct Hlookup as [[id res] [Heq Helem]].
+      inversion Heq; subst; clear Heq.
+      apply elem_of_map_to_list in Helem. by rewrite Helem.
+    + apply NoDup_fmap_fst.
+      * move => x y1 y2 H1 H2.
+        apply elem_of_list_fmap in H1. destruct H1 as [[x1' y1'] [He1 Helem1]].
+        apply elem_of_list_fmap in H2. destruct H2 as [[x2' y2'] [He2 Helem2]].
+        inversion He1; inversion He2; subst; inversion H3; subst; clear H3.
+        apply elem_of_map_to_list in Helem1.
+        apply elem_of_map_to_list in Helem2.
+        rewrite Helem1 in Helem2. by inversion Helem2.
+      * apply NoDup_fmap; last by apply NoDup_map_to_list.
+        move => p1 p2 Heq.
+        destruct p1 as [x1 y1]. destruct p2 as [x2 y2].
+        inversion Heq; subst.
+        repeat (destruct y1; destruct y2 => //=; try by inversion H2).
+  - apply not_elem_of_list_to_map in Hlookup.
+    rewrite -> elem_of_list_fmap in Hlookup.
+    remember (hs !! i) as lookup_res2 eqn: Hlookup2; symmetry in Hlookup2.
+    repeat destruct lookup_res2 as [lookup_res2|] => //=; exfalso; apply Hlookup; apply elem_of_map_to_list in Hlookup2.
+    + exists (loc_host_var i, Some (hval_val lookup_res2)). split => //=.
+      apply elem_of_list_fmap.
+      by exists (i, Some lookup_res2).
+    + exists (loc_host_var i, None). split => //=.
+      apply elem_of_list_fmap.
+      by exists (i, None).                                     
+Qed.
 
 Definition gmap_of_state (σ : state) : gmap loc (option heap_val) :=
   let (hss, locs) := σ in
   let (hs, s) := hss in
   (* TODO: maybe better to make a disjoint_union predicate to make lookup lemmas easier. *)
-  gmap_union_list fselect
-                  [::(gmap_of_store s);
-                  gmap_of_locs locs;
-                  heap_gmap_of_hs hs].
+  map_union (gmap_of_store s)
+            (map_union (gmap_of_locs locs)
+                       (heap_gmap_of_hs hs)).
 
 Lemma gmap_of_state_lookup_hs: forall hs s locs id,
     (gmap_of_state (hs, s, locs)) !! (loc_host_var id) = option_map (option_map (fun v => hval_val v)) (hs !! id).
