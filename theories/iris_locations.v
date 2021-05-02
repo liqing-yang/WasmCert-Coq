@@ -255,39 +255,154 @@ Proof with resolve_finmap.
   destruct y1, y2 => //...
 Qed.
 
-Lemma heapg_locs_locs_lookup (locs: list host_value) (n: N):
+Ltac resolve_heapg_list_typed :=
+  remember_lookup;
+  match goal with
+  | Hlookup: ?pred _ !! _ = ?lookup_res |- _ =>
+    unfold pred in Hlookup;
+    rewrite -> heapg_of_list_lookup in Hlookup => //=;
+    try by (intros ?? Heq; inversion Heq);
+    unfold option_map in *; try by destruct lookup_res; resolve_finmap
+  | _ => idtac
+  end.
+
+Lemma heapg_loc_loc_lookup (locs: list host_value) (n: N):
   (gmap_of_locs locs) !! (loc_local_var n) = option_map (fun y => Some (hval_val y)) (locs !! (N.to_nat n)).
-Proof with resolve_finmap.
-  remember_lookup.
-  unfold gmap_of_locs in Hlookup.
-  rewrite -> heapg_of_list_lookup in Hlookup.
-  - unfold option_map in *. by destruct lookup_res...
-  - move => x y Heq. by inversion Heq.
+Proof.
+  by resolve_heapg_list_typed.
 Qed.  
 
-Lemma heapg_locs_notlocs_lookup (locs: list host_value) (l: loc):
+Lemma heapg_func_func_lookup (s: store_record) (n: N):
+  (gmap_of_store_func s) !! (loc_wasm_func n) = option_map (fun x => Some (hval_func x)) (s.(s_funcs) !! (N.to_nat n)).
+Proof.
+  by resolve_heapg_list_typed.
+Qed.
+
+Lemma heapg_tab_tab_lookup (s: store_record) (n: N):
+  (gmap_of_store_tab s) !! (loc_wasm_tab n) = option_map (fun x => Some (hval_tab x)) (s.(s_tables) !! (N.to_nat n)).
+Proof.
+  by resolve_heapg_list_typed.
+Qed.
+
+Lemma heapg_mem_mem_lookup (s: store_record) (n: N):
+  (gmap_of_store_mem s) !! (loc_wasm_mem n) = option_map (fun x => Some (hval_mem x)) (s.(s_mems) !! (N.to_nat n)).
+Proof.
+  by resolve_heapg_list_typed.
+Qed.
+
+Lemma heapg_glob_glob_lookup (s: store_record) (n: N):
+  (gmap_of_store_glob s) !! (loc_wasm_glob n) = option_map (fun x => Some (hval_glob x)) (s.(s_globals) !! (N.to_nat n)).
+Proof.
+  by resolve_heapg_list_typed.
+Qed.
+
+Ltac resolve_heapg_list_mistyped :=
+  remember_lookup;
+  intros ?;
+  match goal with
+  | Hlookup: ?pred _ !! ?l = ?lookup_res |- _ =>
+    destruct lookup_res => //=;
+    unfold pred in Hlookup;
+    rewrite -> heapg_of_list_lookup_none in Hlookup; try by (destruct l; try resolve_finmap);
+    try by (intros ?? Heq; inversion Heq)
+  | _ => idtac
+  end.
+
+Lemma heapg_loc_notloc_lookup (locs: list host_value) (l: loc):
   loc_typeof l <> LOC_LV ->
   (gmap_of_locs locs) !! l = None.
-Proof with resolve_finmap.
-  remember_lookup.
-  move => HLT.
-  destruct lookup_res => //=.
-  unfold gmap_of_locs in Hlookup.
-  rewrite -> heapg_of_list_lookup_none in Hlookup; last by destruct l...
-  move => x y Heq; by inversion Heq.
+Proof.
+  by resolve_heapg_list_mistyped.
 Qed.
+
+Lemma heapg_func_notfunc_lookup (s: store_record) (l: loc):
+  loc_typeof l <> LOC_WF ->
+  (gmap_of_store_func s) !! l = None.
+Proof.
+  by resolve_heapg_list_mistyped.
+Qed.
+
+Lemma heapg_tab_nottab_lookup (s: store_record) (l: loc):
+  loc_typeof l <> LOC_WT ->
+  (gmap_of_store_tab s) !! l = None.
+Proof.
+  by resolve_heapg_list_mistyped.
+Qed.
+
+Lemma heapg_mem_notmem_lookup (s: store_record) (l: loc):
+  loc_typeof l <> LOC_WM ->
+  (gmap_of_store_mem s) !! l = None.
+Proof.
+  by resolve_heapg_list_mistyped.
+Qed.
+
+Lemma heapg_glob_notglob_lookup (s: store_record) (l: loc):
+  loc_typeof l <> LOC_WG ->
+  (gmap_of_store_glob s) !! l = None.
+Proof.
+  by resolve_heapg_list_mistyped.
+Qed.
+
+Ltac simplify_store_lookup H :=
+  repeat match type of H with
+  | context C [gmap_of_store_func _ !! _] =>
+    try rewrite heapg_func_func_lookup in H; try rewrite heapg_func_notfunc_lookup in H
+  | context C [gmap_of_store_tab _ !! _ ] =>
+    try rewrite heapg_tab_tab_lookup in H; try rewrite heapg_tab_nottab_lookup in H
+  | context C [gmap_of_store_mem _ !! _ ] =>
+    try rewrite heapg_mem_mem_lookup in H; try rewrite heapg_mem_notmem_lookup in H
+  | context C [gmap_of_store_glob _ !! _ ] =>
+    try rewrite heapg_glob_glob_lookup in H; try rewrite heapg_glob_notglob_lookup in H
+  end.
+
+Ltac resolve_heapg_store_lookup :=
+  remember_lookup;
+  repeat match goal with
+  | Hlookup: gmap_of_store _ !! _ = ?lookup_res |- _ =>
+    destruct lookup_res => //=;
+    unfold gmap_of_store, map_union in Hlookup;
+    repeat rewrite lookup_union_with in Hlookup;
+    unfold union_with, option_union_with in Hlookup;
+    simplify_store_lookup Hlookup; try by []
+  | _ => idtac
+  end.
 
 Lemma heapg_store_hs_lookup (s: store_record) (i: id):
   (gmap_of_store s) !! (loc_host_var i) = None.
 Proof.
-  remember_lookup.
-  destruct lookup_res => //=.
-  unfold gmap_of_store in Hlookup.
-  unfold map_union in Hlookup.
-  repeat rewrite lookup_union_with in Hlookup.
-  unfold union_with, option_union_with in Hlookup.
-Admitted.
+  resolve_heapg_store_lookup.
+Qed.
   
+Lemma heapg_store_loc_lookup (s: store_record) (n: N):
+  (gmap_of_store s) !! (loc_local_var n) = None.
+Proof.
+  resolve_heapg_store_lookup.
+Qed.
+
+Lemma heapg_store_func_lookup (s: store_record) (n: N):
+  (gmap_of_store s) !! (loc_wasm_func n) = option_map (fun x => Some (hval_func x)) (s.(s_funcs) !! (N.to_nat n)).
+Proof.
+  resolve_heapg_store_lookup; rewrite - Hlookup; by destruct (option_map _ _).
+Qed.
+
+Lemma heapg_store_tab_lookup (s: store_record) (n: N):
+  (gmap_of_store s) !! (loc_wasm_tab n) = option_map (fun x => Some (hval_tab x)) (s.(s_tables) !! (N.to_nat n)).
+Proof.
+  resolve_heapg_store_lookup; rewrite - Hlookup; by destruct (option_map _ _).
+Qed.
+
+Lemma heapg_store_mem_lookup (s: store_record) (n: N):
+  (gmap_of_store s) !! (loc_wasm_mem n) = option_map (fun x => Some (hval_mem x)) (s.(s_mems) !! (N.to_nat n)).
+Proof.
+  resolve_heapg_store_lookup; rewrite - Hlookup; by destruct (option_map _ _).
+Qed.
+
+Lemma heapg_store_glob_lookup (s: store_record) (n: N):
+  (gmap_of_store s) !! (loc_wasm_glob n) = option_map (fun x => Some (hval_glob x)) (s.(s_globals) !! (N.to_nat n)).
+Proof.
+  resolve_heapg_store_lookup; rewrite - Hlookup; by destruct (option_map _ _).
+Qed.
+
 Definition gmap_of_state (σ : state) : gmap loc (option heap_val) :=
   let (hss, locs) := σ in
   let (hs, s) := hss in
@@ -296,19 +411,70 @@ Definition gmap_of_state (σ : state) : gmap loc (option heap_val) :=
             (map_union (gmap_of_locs locs)
                        (heap_gmap_of_hs hs)).
 
-Lemma gmap_of_state_lookup_hs: forall hs s locs id,
-    (gmap_of_state (hs, s, locs)) !! (loc_host_var id) = option_map (option_map (fun v => hval_val v)) (hs !! id).
-Proof.
-  move => hs s locs id. unfold gmap_of_state.
-  rewrite lookup_union. unfold union_with, option_union_with.
-Admitted.
+Ltac simplify_lookup :=
+  repeat match goal with
+  | |- context C [gmap_of_store _ !! loc_host_var _ ] =>
+    rewrite heapg_store_hs_lookup
+  | |- context C [gmap_of_store _ !! loc_local_var _ ] =>
+    rewrite heapg_store_loc_lookup
+  | |- context C [gmap_of_store _ !! loc_wasm_func _ ] =>
+    rewrite heapg_store_func_lookup
+  | |- context C [gmap_of_store _ !! loc_wasm_tab _ ] =>
+    rewrite heapg_store_tab_lookup
+  | |- context C [gmap_of_store _ !! loc_wasm_mem _ ] =>
+    rewrite heapg_store_mem_lookup
+  | |- context C [gmap_of_store _ !! loc_wasm_glob _ ] =>
+    rewrite heapg_store_glob_lookup
+  | |- context C [gmap_of_locs _ !! _ ] =>
+    try rewrite heapg_loc_loc_lookup; try rewrite heapg_loc_notloc_lookup
+  | |- context C [heap_gmap_of_hs _ !! _ ] =>
+    try rewrite heapg_hs_hs_lookup; try rewrite heapg_hs_noths_lookup
+  | _ => idtac
+  end.
 
-Lemma gmap_of_state_lookup_locs: forall hs s locs n,
-    (gmap_of_state (hs, s, locs)) !! (loc_local_var n) = option_map (fun v => Some (hval_val v)) (List.nth_error locs (N.to_nat n)).
+Ltac resolve_heapg_state_lookup :=
+  intros;
+  unfold gmap_of_state, map_union;
+  repeat (rewrite lookup_union_with; simplify_lookup) => //;
+  unfold union_with, option_union_with;
+  destruct (option_map _ _)
+  .
+  
+Lemma heapg_state_hs_lookup: forall hs s locs id,
+  (gmap_of_state (hs, s, locs)) !! (loc_host_var id) = option_map (option_map (fun v => hval_val v)) (hs !! id).
 Proof.
-  move => hs s locs n.
-Admitted.
+  by resolve_heapg_state_lookup.
+Qed.  
 
+Lemma heapg_state_loc_lookup: forall hs s locs n,
+  (gmap_of_state (hs, s, locs)) !! (loc_local_var n) = option_map (fun v => Some (hval_val v)) (locs !! (N.to_nat n)).
+Proof.
+  by resolve_heapg_state_lookup.
+Qed.
+
+Lemma heapg_state_func_lookup: forall hs s locs n,
+  (gmap_of_state (hs, s, locs)) !! (loc_wasm_func n) = option_map (fun v => Some (hval_func v)) (s.(s_funcs) !! (N.to_nat n)).
+Proof.
+  by resolve_heapg_state_lookup.
+Qed.
+
+Lemma heapg_state_tab_lookup: forall hs s locs n,
+  (gmap_of_state (hs, s, locs)) !! (loc_wasm_tab n) = option_map (fun v => Some (hval_tab v)) (s.(s_tables) !! (N.to_nat n)).
+Proof.
+  by resolve_heapg_state_lookup.
+Qed.
+
+Lemma heapg_state_mem_lookup: forall hs s locs n,
+  (gmap_of_state (hs, s, locs)) !! (loc_wasm_mem n) = option_map (fun v => Some (hval_mem v)) (s.(s_mems) !! (N.to_nat n)).
+Proof.
+  by resolve_heapg_state_lookup.
+Qed.
+
+Lemma heapg_state_glob_lookup: forall hs s locs n,
+  (gmap_of_state (hs, s, locs)) !! (loc_wasm_glob n) = option_map (fun v => Some (hval_glob v)) (s.(s_globals) !! (N.to_nat n)).
+Proof.
+  by resolve_heapg_state_lookup.
+Qed.
 
 (* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
      (fractional algebra). 
