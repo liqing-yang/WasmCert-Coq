@@ -223,16 +223,22 @@ Proof.
       contributing one.
    *)
   iDestruct (gen_heap_valid with "Hσ Hl") as %?.
+  (* We deal with the lookup hypothesis first. *)
+  destruct σ1 as [[hs ws] locs].
+  simplify_lookup H.
+  remember (hs !! id) as lookup_res.
+  destruct lookup_res as [ores|] => //=.
+  destruct ores as [ores'|] => //=.
+  simpl in H. inversion H; subst; clear H.
   (*
     The iSplit tactic is easier -- it basically tries to split up P * Q into two, but only when
       one of P or Q is persistent (else we'll have to use iSplitL/iSplitR, and also divide our
       Iris hypothesis into two parts and we can only use one part on each side). 
-  *)
+   *)
   iSplit.
   (* The first part asks to prove that HE_getglobal id actually can reduce further. The proof
       is just normal Coq instead of Iris so is left mostly without comments. *)
-  - unfold head_reducible. inv_head_step. iExists [], (HE_value v), σ1, [].
-    destruct σ1 as [[hs ws] locs].
+  - unfold head_reducible. inv_head_step. iExists [], (HE_value v), (hs, ws, locs), [].
     simpl in *. unfold head_step. repeat iSplit => //.
     (* iPureIntro takes an Iris goal ⌜ P ⌝ into a Coq goal P. *)
     iPureIntro.
@@ -247,46 +253,57 @@ Proof.
   *)
   - iIntros (e2 σ2 efs Hstep); inv_head_step.
     (* There are two cases -- either the lookup result v is an actual valid value, or a trap. *)
-    + repeat iModIntro; repeat (iSplit; first done). iFrame. 
+    + repeat iModIntro; repeat (iSplit; first done). iFrame.
+      rewrite H4 in Heqlookup_res.
+      inversion Heqlookup_res; subst; clear Heqlookup_res.
       by iApply "HΦ".
     (* But it can't be a trap since we already have full knowledge from H what v should be. *)    
-    + by rewrite H in H6. (* TODO: fix this bad pattern *)  
+    + by rewrite H4 in Heqlookup_res. (* TODO: fix this bad pattern of using generated H4*)  
 Qed.
 
 (* If we have full ownership then we can also set the value of it -- provided that the value
      is not a trap. *)
 Lemma wp_setglobal_value s E id w v:
   v <> HV_trap ->
-  {{{ id ↦ w }}} HE_setglobal id (HE_value v) @ s; E
-  {{{ RET v; id ↦ v }}}.
+  {{{ (loc_host_var id) ↦ (hval_val w) }}} HE_setglobal id (HE_value v) @ s; E
+  {{{ RET v; (loc_host_var id) ↦ (hval_val v) }}}.
 Proof.
   intros HNTrap.
   iIntros (Φ) "Hl HΦ". iApply wp_lift_atomic_head_step_no_fork; first done.
-  iIntros (σ1 κs n) "Hσ !>". iDestruct (gen_heap_valid with "Hσ Hl") as %?.
+  iIntros (σ1 κ κs n) "Hσ !>". iDestruct (gen_heap_valid with "Hσ Hl") as %?.
+  (* Dealing with the lookup hypothesis first again. TODO: maybe refactor this into another 
+       ltac as well *)
+  destruct σ1 as [[hs ws] locs].
+  simplify_lookup H.
+  remember (hs !! id) as lookup_res.
+  destruct lookup_res as [ores|] => //.
+  destruct ores as [ores'|] => //.
+  simpl in H. inversion H; subst; clear H.
   iSplit.
-  - unfold head_reducible_no_obs. inv_head_step. 
-    unfold gmap_of_state in H. destruct σ1 as [[hs ws] locs].
-    inv_head_step. unfold head_step. repeat iSplit => //. 
-    iPureIntro. repeat eexists. by apply pr_setglobal_value.
-  - iIntros (κ v2 σ2 efs Hstep); inv_head_step.
-    (* What does this do? *)
-    iMod (gen_heap_update with "Hσ Hl") as "[$ Hl]".
-    iModIntro. repeat (iSplit => //). by iApply "HΦ".
+  - iPureIntro. repeat eexists. by apply pr_setglobal_value.
+  - iIntros (v2 σ2 efs Hstep); inv_head_step.
+    iModIntro.
+    iMod (gen_heap_update with "Hσ Hl") as "[Hσ Hl]".
+    repeat rewrite fold_gmap_state.
+    rewrite heapg_hs_update.
+    iModIntro.
+    iSplit => //.
+    iSplitL "Hσ" => //.
+    by iApply "HΦ".
 Qed.
-
-Lemma twp_setglobal_trap s E id Ψ:
-  [[{ Ψ }]] HE_setglobal id (HE_value HV_trap) @ s; E
-  [[{ RET (HV_trap); Ψ }]].
+      
+Lemma wp_setglobal_trap s E id Ψ:
+  {{{ Ψ }}} HE_setglobal id (HE_value HV_trap) @ s; E
+  {{{ RET (HV_trap); Ψ }}}.
 Proof.
-  iIntros (Φ) "Hl HΦ". iApply twp_lift_atomic_head_step_no_fork; first done.
-  iIntros (σ1 κs n) "Hσ !>".
+  iIntros (Φ) "Hl HΦ". iApply wp_lift_atomic_head_step_no_fork; first done.
+  iIntros (σ1 κ κs n) "Hσ !>".
   iSplit.
   - unfold head_reducible_no_obs. simpl in *. destruct σ1 as [[hs ws] locs].
     iPureIntro. repeat eexists. by apply pr_setglobal_trap.
-  - iIntros (κ e2 σ2 efs Hstep); inv_head_step.
-    iModIntro. repeat (iSplit => //). iFrame. by iApply "HΦ".
+  - iIntros (e2 σ2 efs Hstep); inv_head_step.
+    repeat iModIntro. repeat (iSplit => //). iFrame. by iApply "HΦ".
 Qed.
-
  
 (* Manually deal with evaluation contexts. Supposedly this proof should be similar to
      wp_bind. *)
@@ -303,7 +320,7 @@ Qed.
 
   But page 139 of ILN says they are almost equivalent (and indeed equivalent when e is not a val).
 *)
-Lemma twp_setglobal_reduce s E id e Ψ Φ:
+Lemma wp_setglobal_reduce s E id e Ψ Φ:
   WP e @ s; E {{ v, ⌜ v <> HV_trap ⌝ ∗ Ψ v }} ∗
   (∀ v, (( ⌜ v <> HV_trap ⌝ ∗ Ψ v) -∗ WP (HE_setglobal id (HE_value v)) @ s; E {{ Φ }})) ⊢
   WP (HE_setglobal id e) @ s; E {{ Φ }}.
@@ -363,16 +380,5 @@ Proof.
   by iApply ("IH" with "[$]").
   (* Now we've actually proved this thing finally.. *)  
 Qed.
-
-(*
-Lemma twp_if_true s E id q v e1 e2 Φ:
-  WP e1 @ s; E {{ Φ }} ∗
-  id ↦{ q } v ∗
-  ⌜ v ≠ (HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m))) ⌝ ⊢
-  WP (HE_if id e1 e2) @ s; E {{ Φ }}.
-Proof.
-  iIntros "[Htrue [Hid Hv]]".
-Abort.
- *)
 
 End lifting.

@@ -411,7 +411,22 @@ Definition gmap_of_state (σ : state) : gmap loc (option heap_val) :=
             (map_union (gmap_of_locs locs)
                        (heap_gmap_of_hs hs)).
 
-Ltac simplify_lookup :=
+Lemma fold_gmap_state hs s locs:
+  map_union (gmap_of_store s) (map_union (gmap_of_locs locs) (heap_gmap_of_hs hs)) = gmap_of_state (hs, s, locs).
+Proof.
+  trivial.
+Qed.
+
+Lemma heapg_hs_update hs s locs i v:
+  gmap_of_state (<[i := (Some v)]> hs, s, locs) = <[(loc_host_var i) := (Some (hval_val v))]> (gmap_of_state (hs, s, locs)).
+Proof.
+  unfold gmap_of_state, map_union.
+  repeat rewrite insert_union_with_r; simplify_component_lookup => //.
+  repeat f_equal.
+  unfold heap_gmap_of_hs.
+Admitted.
+
+Ltac simplify_component_lookup :=
   repeat match goal with
   | |- context C [gmap_of_store _ !! loc_host_var _ ] =>
     rewrite heapg_store_hs_lookup
@@ -435,7 +450,7 @@ Ltac simplify_lookup :=
 Ltac resolve_heapg_state_lookup :=
   intros;
   unfold gmap_of_state, map_union;
-  repeat (rewrite lookup_union_with; simplify_lookup) => //;
+  repeat (rewrite lookup_union_with; simplify_component_lookup) => //;
   unfold union_with, option_union_with;
   destruct (option_map _ _)
   .
@@ -475,6 +490,22 @@ Lemma heapg_state_glob_lookup: forall hs s locs n,
 Proof.
   by resolve_heapg_state_lookup.
 Qed.
+
+Ltac simplify_lookup H :=
+  match type of H with
+  | context C [gmap_of_state (_, _, _) !! (loc_host_var _)] =>
+    try rewrite heapg_state_hs_lookup in H
+  | context C [gmap_of_state (_, _, _) !! (loc_local_var _)] =>
+    try rewrite heapg_state_loc_lookup in H
+  | context C [gmap_of_state (_, _, _) !! (loc_wasm_func _)] =>
+    try rewrite heapg_state_func_lookup in H
+  | context C [gmap_of_state (_, _, _) !! (loc_wasm_tab _)] =>
+    try rewrite heapg_state_tab_lookup in H
+  | context C [gmap_of_state (_, _, _) !! (loc_wasm_mem _)] =>
+    try rewrite heapg_state_mem_lookup in H
+  | context C [gmap_of_state (_, _, _) !! (loc_wasm_glob _)] =>
+    try rewrite heapg_state_glob_lookup in H
+  end.
 
 (* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
      (fractional algebra). 
