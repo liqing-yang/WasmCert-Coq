@@ -17,7 +17,7 @@ From iris.base_logic.lib Require Export gen_heap proph_map gen_inv_heap.
 From iris.program_logic Require Export weakestpre total_weakestpre.
 
 Inductive loc : Type :=
-  | loc_host_var: N -> loc
+  | loc_host_var: id -> loc
   | loc_local_var: N -> loc
   | loc_wasm_func: N -> loc
   | loc_wasm_tab: N -> loc
@@ -90,7 +90,8 @@ Inductive heap_val : Type :=
   | hval_func: function_closure -> heap_val
   | hval_tab: tableinst -> heap_val
   | hval_mem: memory -> heap_val
-  | hval_glob: global -> heap_val.
+  | hval_glob: global -> heap_val
+.
 
 (* Implemented using imap, should be the optimal now *)
 Definition heap_gmap_of_list {T: Type} (l: list T) (f: N -> loc) (g: T -> heap_val) : gmap loc (option heap_val) :=
@@ -122,6 +123,7 @@ Definition heap_gmap_of_hs (hs: host_state) : gmap loc (option heap_val) :=
   (fmap (fun p => match p with | (x, y) => (loc_host_var x, option_map (fun y => hval_val y) y) end)
         (map_to_list hs)).
 
+(* automatically remembers a lookup result and make the hypothesis ready for destruct *)
 Ltac remember_lookup :=
   match goal with
   | |- context C [?m !! ?x = _] =>
@@ -129,6 +131,7 @@ Ltac remember_lookup :=
     remember (m !! x) as lookup_res eqn: Hlookup; symmetry in Hlookup
   end.
 
+(* resolving predicates related to maps and lookups in stdpp. *)
 Ltac resolve_finmap :=
   repeat match goal with
          | H: (list_to_map _) !! _ = Some _ |- _ =>
@@ -406,25 +409,9 @@ Qed.
 Definition gmap_of_state (σ : state) : gmap loc (option heap_val) :=
   let (hss, locs) := σ in
   let (hs, s) := hss in
-  (* TODO: maybe better to make a disjoint_union predicate to make lookup lemmas easier. *)
   map_union (gmap_of_store s)
             (map_union (gmap_of_locs locs)
                        (heap_gmap_of_hs hs)).
-
-Lemma fold_gmap_state hs s locs:
-  map_union (gmap_of_store s) (map_union (gmap_of_locs locs) (heap_gmap_of_hs hs)) = gmap_of_state (hs, s, locs).
-Proof.
-  trivial.
-Qed.
-
-Lemma heapg_hs_update hs s locs i v:
-  gmap_of_state (<[i := (Some v)]> hs, s, locs) = <[(loc_host_var i) := (Some (hval_val v))]> (gmap_of_state (hs, s, locs)).
-Proof.
-  unfold gmap_of_state, map_union.
-  repeat rewrite insert_union_with_r; simplify_component_lookup => //.
-  repeat f_equal.
-  unfold heap_gmap_of_hs.
-Admitted.
 
 Ltac simplify_component_lookup :=
   repeat match goal with
@@ -492,7 +479,7 @@ Proof.
 Qed.
 
 Ltac simplify_lookup H :=
-  match type of H with
+  repeat match type of H with
   | context C [gmap_of_state (_, _, _) !! (loc_host_var _)] =>
     try rewrite heapg_state_hs_lookup in H
   | context C [gmap_of_state (_, _, _) !! (loc_local_var _)] =>
@@ -506,6 +493,58 @@ Ltac simplify_lookup H :=
   | context C [gmap_of_state (_, _, _) !! (loc_wasm_glob _)] =>
     try rewrite heapg_state_glob_lookup in H
   end.
+
+Lemma fold_gmap_state hs s locs:
+  map_union (gmap_of_store s) (map_union (gmap_of_locs locs) (heap_gmap_of_hs hs)) = gmap_of_state (hs, s, locs).
+Proof.
+  trivial.
+Qed.
+
+Lemma heapg_hs_update hs s locs i v:
+  gmap_of_state (<[i := (Some v)]> hs, s, locs) = <[(loc_host_var i) := (Some (hval_val v))]> (gmap_of_state (hs, s, locs)).
+Proof with resolve_finmap.
+  unfold gmap_of_state, map_union.
+  repeat rewrite insert_union_with_r; simplify_component_lookup => //.
+  repeat f_equal.
+  unfold heap_gmap_of_hs.
+  apply map_eq; intros i'.
+  destruct (decide (i' = (loc_host_var i))) as [->|HN].
+  - rewrite lookup_insert.
+    apply elem_of_list_to_map...
+    + apply NoDup_fmap; last by apply NoDup_map_to_list.
+      move => [x1 y1] [x2 y2] Heq.
+      unfold option_map in Heq.
+      by destruct y1; destruct y2; inversion Heq; subst.
+    + rewrite -> elem_of_list_fmap.
+      exists (i, Some v).
+      split => //=.
+      apply elem_of_map_to_list.
+      by apply lookup_insert.
+  - rewrite lookup_insert_ne => //.
+    remember_lookup...
+    destruct lookup_res...
+    + rewrite lookup_insert_ne in Helem => //; last by intros ?; apply HN; subst.
+      symmetry. apply elem_of_list_to_map...
+      * apply NoDup_fmap; last by apply NoDup_map_to_list.
+        move => [x1 y1] [x2 y2] Heq...
+        unfold option_map in H1. destruct y1; destruct y2 => //=; by inversion H1.
+      * apply elem_of_list_fmap.
+        exists (i0, o0). split => //...
+    + apply NoDup_fmap; last by apply NoDup_map_to_list.
+      move => [x1 y1] [x2 y2] Heq...
+      unfold option_map in H2.
+      destruct y1; destruct y2 => //=; by inversion H2. (* This proof for NoDup is becoming a pattern. *)
+    + symmetry. apply not_elem_of_list_to_map.
+      move => HContra. apply H2...
+      apply elem_of_list_fmap.
+      exists (loc_host_var i0, option_map (fun x => hval_val x) o).
+      split => //=.
+      apply elem_of_list_fmap.
+      exists (i0, o).
+      split => //...
+      rewrite lookup_insert_ne => //.
+      intros ?; by apply HN => //; subst.
+Qed.
 
 (* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
      (fractional algebra). 
