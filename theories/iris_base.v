@@ -34,3 +34,10 @@ Fixpoint to_val (e : expr) : option val :=
 (* https://softwarefoundations.cis.upenn.edu/qc-current/Typeclasses.html *)
 Global Instance val_eq_dec : EqDecision val.
 Proof. decidable_equality. Defined.
+
+Lemma of_to_val e v : to_val e = Some v → of_val v = e.
+Proof.
+  destruct e => //=.
+  move => H. by inversion H.
+Qed.
+

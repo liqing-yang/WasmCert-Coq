@@ -12,7 +12,9 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Require Import common operations datatypes datatypes_properties opsem interpreter binary_format_parser iris_locations iris_base iris_opsem.
+Require Import common operations datatypes datatypes_properties opsem interpreter binary_format_parser.
+
+Require Import iris_locations iris_base iris_opsem.
 
 From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
@@ -20,22 +22,6 @@ From iris.algebra Require Import auth.
 From iris.bi.lib Require Import fractional.
 From iris.base_logic.lib Require Export gen_heap proph_map gen_inv_heap.
 From iris.program_logic Require Export weakestpre total_weakestpre.
-
-Lemma of_to_val e v : to_val e = Some v → of_val v = e.
-Proof.
-  destruct e => //=.
-  move => H. by inversion H.
-Qed.
-
-Lemma head_step_not_val: forall e1 σ1 κ e2 σ2 efs,
-  head_step e1 σ1 κ e2 σ2 efs ->
-  to_val e1 = None.
-Proof.
-  move => e1 σ1 κ e2 σ2 efs H.
-  destruct H as [HR _].
-  inversion HR as [hs s locs e hs' s' locs' e' H]; subst.
-  by inversion H.
-Qed.
 
 (* empty definitions just to enable the tactics in EctxiLanguageMixin as almost all prebuilt
      tactics could only work for EctxilanguageMixin *)
@@ -58,16 +44,46 @@ Canonical Structure wasm_lang := LanguageOfEctx wasm_ectx_lang.
 
 Definition proph_id := unit. (* ??? *)
 
-Class heapG Σ := HeapG {
-  heapG_invG : invG Σ;
-  heapG_gen_heapG :> gen_heapG loc (option heap_val) Σ;
-  (* not sure what this does, taken out for now *)
-(*  heapG_proph_mapG :> proph_mapG proph_id (val * val) Σ;*)
+Class hsG Σ := HsG {
+  hs_invG : invG Σ;
+  hs_gen_hsG :> gen_heapG id (option val) Σ
 }.
 
-Instance heapG_irisG `{!heapG Σ} : irisG wasm_lang Σ := {
-  iris_invG := heapG_invG;
-  state_interp σ κs _ := gen_heap_ctx (gmap_of_state σ);
+Class locG Σ := LocG {
+  loc_invG : invG Σ;
+  loc_gen_hsG :> gen_heapG N (option val) Σ
+}.
+
+Class wfuncG Σ := WFuncG {
+  func_invG : invG Σ;
+  func_gen_hsG :> gen_heapG N (option function_closure) Σ;
+}.
+
+Class wtabG Σ := WTabG {
+  tab_invG : invG Σ;
+  tab_gen_hsG :> gen_heapG N (option tableinst) Σ;
+}.
+
+Class wmemG Σ := WMemG {
+  mem_invG : invG Σ;
+  mem_gen_hsG :> gen_heapG N (option memory) Σ;
+}.
+
+Class wglobG Σ := WGlobG {
+  glob_invG : invG Σ;
+  glob_gen_hsG :> gen_heapG N (option global) Σ;
+}.
+
+Instance heapG_irisG `{hsG Σ, locG Σ, wfuncG Σ, wtabG Σ, wmemG Σ, wglobG Σ} : irisG wasm_lang Σ := {
+  iris_invG := hs_invG;
+  state_interp σ κs _ := let (hss, locs) := σ in
+                         let (hs, s) := hss in
+                         ((gen_heap_ctx (heap_gmap_of_hs hs)) ∗
+                         (gen_heap_ctx (gmap_of_locs locs)) ∗
+                         (gen_heap_ctx (gmap_of_store_func s)) ∗
+                         (gen_heap_ctx (gmap_of_store_tab s)) ∗
+                         (gen_heap_ctx (gmap_of_store_mem s)) ∗
+                         (gen_heap_ctx (gmap_of_store_glob s)))%I;
   fork_post z := True%I;
 }.
 

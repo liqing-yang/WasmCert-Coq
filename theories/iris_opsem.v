@@ -472,3 +472,13 @@ Definition head_step (e : expr) (s : state) (os : list observation) (e' : expr) 
   head_reduce s e s' e' /\
   os = nil /\
   es' = nil. (* ?? *)
+
+Lemma head_step_not_val: forall e1 σ1 κ e2 σ2 efs,
+  head_step e1 σ1 κ e2 σ2 efs ->
+  to_val e1 = None.
+Proof.
+  move => e1 σ1 κ e2 σ2 efs H.
+  destruct H as [HR _].
+  inversion HR as [hs s locs e hs' s' locs' e' H]; subst.
+  by inversion H.
+Qed.
