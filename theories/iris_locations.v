@@ -93,6 +93,9 @@ Inductive heap_val : Type :=
   | hval_glob: global -> heap_val
 .
 
+Definition gmap_of_list {T: Type} (l: list T) : gmap N (option T) :=
+    list_to_map (imap (fun n x => (N.of_nat n, Some x)) l).
+
 (* Implemented using imap, should be the optimal now *)
 Definition heap_gmap_of_list {T: Type} (l: list T) (f: N -> loc) (g: T -> heap_val) : gmap loc (option heap_val) :=
   list_to_map (imap (fun n x => (f (N.of_nat n), Some (g x))) l).

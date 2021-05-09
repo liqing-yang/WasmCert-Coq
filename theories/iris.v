@@ -76,14 +76,17 @@ Class wglobG Σ := WGlobG {
 
 Instance heapG_irisG `{hsG Σ, locG Σ, wfuncG Σ, wtabG Σ, wmemG Σ, wglobG Σ} : irisG wasm_lang Σ := {
   iris_invG := hs_invG;
-  state_interp σ κs _ := let (hss, locs) := σ in
-                         let (hs, s) := hss in
-                         ((gen_heap_ctx (heap_gmap_of_hs hs)) ∗
-                         (gen_heap_ctx (gmap_of_locs locs)) ∗
-                         (gen_heap_ctx (gmap_of_store_func s)) ∗
-                         (gen_heap_ctx (gmap_of_store_tab s)) ∗
-                         (gen_heap_ctx (gmap_of_store_mem s)) ∗
-                         (gen_heap_ctx (gmap_of_store_glob s)))%I;
+  state_interp σ κs _ :=
+    let (hss, locs) := σ in
+    let (hs, s) := hss in
+    ((gen_heap_ctx hs) ∗
+      (gen_heap_ctx (gmap_of_list locs)) ∗
+      (gen_heap_ctx (gmap_of_list s.(s_funcs))) ∗
+      (gen_heap_ctx (gmap_of_list s.(s_tables))) ∗
+      (gen_heap_ctx (gmap_of_list s.(s_mems))) ∗ (* TODO: change this to some implementation like
+arrays *)
+      (gen_heap_ctx (gmap_of_list s.(s_globals)))
+    )%I;
   fork_post z := True%I;
 }.
 
