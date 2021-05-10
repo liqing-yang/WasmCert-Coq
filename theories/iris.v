@@ -12,7 +12,7 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Require Import common operations datatypes datatypes_properties opsem interpreter binary_format_parser.
+Require Import common operations datatypes datatypes_properties.
 
 From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
@@ -88,7 +88,7 @@ arrays *)
       (gen_heap_ctx (gmap_of_list s.(s_globals)))
     )%I;
   fork_post _ := True%I;
-}.
+                                                                                                  }.
 
 (* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
      (fractional algebra). 
@@ -99,28 +99,28 @@ Notation "i ↦ₕ v" := (mapsto (L:=id) (V:=option host_value) i 1 (Some v%V))
                       (at level 20, format "i ↦ₕ v") : bi_scope.
 Notation "n ↦ₗ{ q } v" := (mapsto (L:=N) (V:=option host_value) n q (Some v%V))
                            (at level 20, q at level 5, format "n ↦ₗ{ q } v") : bi_scope.
-Notation "n ↦ₗ v" := (mapsto (L:=id) (V:=option host_value) n 1 (Some v%V))
+Notation "n ↦ₗ v" := (mapsto (L:=N) (V:=option host_value) n 1 (Some v%V))
                       (at level 20, format "n ↦ₗ v") : bi_scope.
 Notation "n ↦₁{ q } v" := (mapsto (L:=N) (V:=option function_closure) n q (Some v%V))
                            (at level 20, q at level 5, format "n ↦₁{ q } v") : bi_scope.
-Notation "n ↦₁ v" := (mapsto (L:=id) (V:=option function_closure) n 1 (Some v%V))
+Notation "n ↦₁ v" := (mapsto (L:=N) (V:=option function_closure) n 1 (Some v%V))
                       (at level 20, format "n ↦₁ v") : bi_scope.
 Notation "n ↦₂{ q } v" := (mapsto (L:=N) (V:=option tableinst) n q (Some v%V))
                            (at level 20, q at level 5, format "n ↦₂{ q } v") : bi_scope.
-Notation "n ↦₂ v" := (mapsto (L:=id) (V:=option tableinst) n 1 (Some v%V))
+Notation "n ↦₂ v" := (mapsto (L:=N) (V:=option tableinst) n 1 (Some v%V))
                       (at level 20, format "n ↦₂ v") : bi_scope.
 Notation "n ↦₃{ q } v" := (mapsto (L:=N) (V:=option memory) n q (Some v%V))
                            (at level 20, q at level 5, format "n ↦₃{ q } v") : bi_scope.
-Notation "n ↦₃ v" := (mapsto (L:=id) (V:=option memory) n 1 (Some v%V))
+Notation "n ↦₃ v" := (mapsto (L:=N) (V:=option memory) n 1 (Some v%V))
                       (at level 20, format "n ↦₃ v") : bi_scope.
 Notation "n ↦₄{ q } v" := (mapsto (L:=N) (V:=option global) n q (Some v%V))
                            (at level 20, q at level 5, format "n  ↦₄{ q } v") : bi_scope.
-Notation "n ↦₄ v" := (mapsto (L:=id) (V:=option global) n 1 (Some v%V))
+Notation "n ↦₄ v" := (mapsto (L:=N) (V:=option global) n 1 (Some v%V))
                       (at level 20, format "n ↦₄ v") : bi_scope.
 
 Section lifting.
 
-Context `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wglobG Σ}.
+Context `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wmemG Σ, !wglobG Σ}.
 
 Implicit Types σ : state.
 
@@ -193,10 +193,6 @@ Qed.
  [[ ]] -- total wp, can't do much (bad)
  {{ }}
 *)
-
-Unset Printing Notations.
-
-Print expr.
   
 Lemma wp_getglobal s E id q v:
   {{{ id ↦ₕ{ q } v }}} (HE_getglobal id) @ s; E
@@ -230,6 +226,11 @@ Proof.
       removing the ={E}=* from our goal (this symbol represents an update modality).
   *)
   iIntros (σ1 κ κs n) "Hσ !>".
+  (* With the new state interpretation by ∗, we can just destruct Hσ and take out the part that
+       we want to use. *)
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs Ho]".
   (*
     A lot is going on here. The %? pattern in the end actually consists of two things: 
       it should be read as first the %H pattern, which is for moving the destructed hypothesis
@@ -273,14 +274,7 @@ Proof.
       pattern; the double Some comes from gmap contributing 1 and our definition of (option val)
       contributing one.
    *)
-  iDestruct (gen_heap_valid with "Hσ Hl") as %?.
-  (* We deal with the lookup hypothesis first. *)
-  destruct σ1 as [[hs ws] locs].
-  simplify_lookup H.
-  remember (hs !! id) as lookup_res.
-  destruct lookup_res as [ores|] => //=.
-  destruct ores as [ores'|] => //=.
-  simpl in H. inversion H; subst; clear H.
+  iDestruct (gen_heap_valid with "Hhs Hl") as %?.
   (*
     The iSplit tactic is easier -- it basically tries to split up P * Q into two, but only when
       one of P or Q is persistent (else we'll have to use iSplitL/iSplitR, and also divide our
@@ -304,42 +298,35 @@ Proof.
   *)
   - iIntros (e2 σ2 efs Hstep); inv_head_step.
     (* There are two cases -- either the lookup result v is an actual valid value, or a trap. *)
-    + repeat iModIntro; repeat (iSplit; first done). iFrame.
-      rewrite H4 in Heqlookup_res.
-      inversion Heqlookup_res; subst; clear Heqlookup_res.
-      by iApply "HΦ".
+    + repeat iModIntro; repeat (iSplit; first done). iFrame; by iApply "HΦ".
     (* But it can't be a trap since we already have full knowledge from H what v should be. *)    
-    + by rewrite H4 in Heqlookup_res. (* TODO: fix this bad pattern of using generated H4*)  
+    + by rewrite H5 in H. (* TODO: fix this bad pattern of using generated hypothesis names *)  
 Qed.
 
 (* If we have full ownership then we can also set the value of it -- provided that the value
      is not a trap. *)
 Lemma wp_setglobal_value s E id w v:
   v <> HV_trap ->
-  {{{ (loc_host_var id) ↦ (hval_val w) }}} HE_setglobal id (HE_value v) @ s; E
-  {{{ RET v; (loc_host_var id) ↦ (hval_val v) }}}.
+  {{{ id ↦ₕ w }}} HE_setglobal id (HE_value v) @ s; E
+  {{{ RET v; id ↦ₕ v }}}.
 Proof.
   intros HNTrap.
   iIntros (Φ) "Hl HΦ". iApply wp_lift_atomic_head_step_no_fork; first done.
-  iIntros (σ1 κ κs n) "Hσ !>". iDestruct (gen_heap_valid with "Hσ Hl") as %?.
+  iIntros (σ1 κ κs n) "Hσ !>".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs Ho]".
+  iDestruct (gen_heap_valid with "Hhs Hl") as %?.
   (* Dealing with the lookup hypothesis first again. TODO: maybe refactor this into another 
        ltac as well *)
-  destruct σ1 as [[hs ws] locs].
-  simplify_lookup H.
-  remember (hs !! id) as lookup_res.
-  destruct lookup_res as [ores|] => //.
-  destruct ores as [ores'|] => //.
-  simpl in H. inversion H; subst; clear H.
   iSplit.
   - iPureIntro. repeat eexists. by apply pr_setglobal_value.
   - iIntros (v2 σ2 efs Hstep); inv_head_step.
     iModIntro.
-    iMod (gen_heap_update with "Hσ Hl") as "[Hσ Hl]".
-    repeat rewrite fold_gmap_state.
-    rewrite heapg_hs_update.
+    iMod (gen_heap_update with "Hhs Hl") as "[Hhs Hl]".
     iModIntro.
     iSplit => //.
-    iSplitL "Hσ" => //.
+    iSplitR "HΦ Hl" => //; first by iSplitR "Ho" => //.
     by iApply "HΦ".
 Qed.
       
