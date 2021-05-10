@@ -14,14 +14,14 @@ Unset Printing Implicit Defensive.
 
 Require Import common operations datatypes datatypes_properties opsem interpreter binary_format_parser.
 
-Require Import iris_locations iris_base iris_opsem.
-
 From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
 From iris.algebra Require Import auth.
 From iris.bi.lib Require Import fractional.
 From iris.base_logic.lib Require Export gen_heap proph_map gen_inv_heap.
 From iris.program_logic Require Export weakestpre total_weakestpre.
+
+Require Import iris_locations iris_base iris_opsem.
 
 (* empty definitions just to enable the tactics in EctxiLanguageMixin as almost all prebuilt
      tactics could only work for EctxilanguageMixin *)
@@ -75,7 +75,7 @@ Class wglobG Σ := WGlobG {
 }.
 
 Instance heapG_irisG `{hsG Σ, locG Σ, wfuncG Σ, wtabG Σ, wmemG Σ, wglobG Σ} : irisG wasm_lang Σ := {
-  iris_invG := hs_invG;
+  iris_invG := hs_invG; (* TODO: determine the correct invariant *)
   state_interp σ κs _ :=
     let (hss, locs) := σ in
     let (hs, s) := hss in
@@ -87,12 +87,40 @@ Instance heapG_irisG `{hsG Σ, locG Σ, wfuncG Σ, wtabG Σ, wmemG Σ, wglobG Σ
 arrays *)
       (gen_heap_ctx (gmap_of_list s.(s_globals)))
     )%I;
-  fork_post z := True%I;
+  fork_post _ := True%I;
 }.
+
+(* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
+     (fractional algebra). 
+   We really only need either 0/1 permission for our language, though. *)
+Notation "i ↦ₕ{ q } v" := (mapsto (L:=id) (V:=option host_value) i q (Some v%V))
+                           (at level 20, q at level 5, format "i ↦ₕ{ q } v") : bi_scope.
+Notation "i ↦ₕ v" := (mapsto (L:=id) (V:=option host_value) i 1 (Some v%V))
+                      (at level 20, format "i ↦ₕ v") : bi_scope.
+Notation "n ↦ₗ{ q } v" := (mapsto (L:=N) (V:=option host_value) n q (Some v%V))
+                           (at level 20, q at level 5, format "n ↦ₗ{ q } v") : bi_scope.
+Notation "n ↦ₗ v" := (mapsto (L:=id) (V:=option host_value) n 1 (Some v%V))
+                      (at level 20, format "n ↦ₗ v") : bi_scope.
+Notation "n ↦₁{ q } v" := (mapsto (L:=N) (V:=option function_closure) n q (Some v%V))
+                           (at level 20, q at level 5, format "n ↦₁{ q } v") : bi_scope.
+Notation "n ↦₁ v" := (mapsto (L:=id) (V:=option function_closure) n 1 (Some v%V))
+                      (at level 20, format "n ↦₁ v") : bi_scope.
+Notation "n ↦₂{ q } v" := (mapsto (L:=N) (V:=option tableinst) n q (Some v%V))
+                           (at level 20, q at level 5, format "n ↦₂{ q } v") : bi_scope.
+Notation "n ↦₂ v" := (mapsto (L:=id) (V:=option tableinst) n 1 (Some v%V))
+                      (at level 20, format "n ↦₂ v") : bi_scope.
+Notation "n ↦₃{ q } v" := (mapsto (L:=N) (V:=option memory) n q (Some v%V))
+                           (at level 20, q at level 5, format "n ↦₃{ q } v") : bi_scope.
+Notation "n ↦₃ v" := (mapsto (L:=id) (V:=option memory) n 1 (Some v%V))
+                      (at level 20, format "n ↦₃ v") : bi_scope.
+Notation "n ↦₄{ q } v" := (mapsto (L:=N) (V:=option global) n q (Some v%V))
+                           (at level 20, q at level 5, format "n  ↦₄{ q } v") : bi_scope.
+Notation "n ↦₄ v" := (mapsto (L:=id) (V:=option global) n 1 (Some v%V))
+                      (at level 20, format "n ↦₄ v") : bi_scope.
 
 Section lifting.
 
-Context `{!heapG Σ}.
+Context `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wglobG Σ}.
 
 Implicit Types σ : state.
 
@@ -120,19 +148,19 @@ Lemma reducible_head_step e σ:
   reducible e σ ->
   exists e' σ', head_step e σ [] e' σ' [].
 Proof.
-  intro H. unfold reducible in H.
-  do 4 destruct H as [??].
-  inversion H; simpl in *; subst.
+  move => HRed. unfold reducible in HRed.
+  destruct HRed as [?[?[?[? HRed]]]].
+  inversion HRed; simpl in *; subst.
   destruct K => //.
-  unfold fill, ectxi_language.fill_item, fill_item in *. simpl in *. inversion H2.
-  destruct H1; subst. eauto.
+  unfold fill, ectxi_language.fill_item, fill_item in *. inversion H1.
+  destruct H1; subst. repeat eexists. by eauto.
 Qed.
 
 Lemma head_step_reducible e σ e' σ':
   head_step e σ [] e' σ' [] ->
   reducible e σ.
 Proof.
-  intro H. unfold reducible => /=.
+  intro HRed. unfold reducible => /=.
   exists [], e', σ', []. eapply Ectx_step => /=.
   - instantiate (1 := e). by instantiate (1 := []).
   - by instantiate (1 := e').
@@ -143,7 +171,7 @@ Lemma hs_red_equiv e σ:
   reducible e σ <-> exists e' σ', head_step e σ [] e' σ' [].
 Proof.
   split; first by apply reducible_head_step.
-  intros. destruct H as [?[??]]. by eapply head_step_reducible.
+  intro HRed. destruct HRed as [?[??]]. by eapply head_step_reducible.
 Qed.
 
 (* Iris formulate its propositions using this 'bi' typeclass (bunched logic) and defined a uPred
@@ -166,9 +194,13 @@ Qed.
  {{ }}
 *)
 
+Unset Printing Notations.
+
+Print expr.
+  
 Lemma wp_getglobal s E id q v:
-  {{{ (loc_host_var id) ↦{ q } (hval_val v) }}} (HE_getglobal id) @ s; E
-  {{{ RET v; (loc_host_var id) ↦{ q } (hval_val v) }}}.
+  {{{ id ↦ₕ{ q } v }}} (HE_getglobal id) @ s; E
+  {{{ RET v; id ↦ₕ{ q } v }}}.
 Proof.
   (* Some explanations on proofmode tactics and patterns are available on 
        https://gitlab.mpi-sws.org/iris/iris/blob/master/docs/proof_mode.md *)

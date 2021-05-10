@@ -549,10 +549,3 @@ Proof with resolve_finmap.
       intros ?; by apply HN => //; subst.
 Qed.
 
-(* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
-     (fractional algebra). 
-   We really only need either 0/1 permission for our language, though. *)
-Notation "l ↦{ q } v" := (mapsto (L:=loc) (V:=option heap_val) l q (Some v%V))
-   (at level 20, q at level 5, format "l  ↦{ q } v") : bi_scope.
-Notation "l ↦ v" := (mapsto (L:=loc) (V:=option heap_val) l 1 (Some v%V))
-   (at level 20, format "l ↦ v") : bi_scope.
