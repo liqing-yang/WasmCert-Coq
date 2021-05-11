@@ -49,17 +49,17 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_setglobal id e) hs' s' locs' (HE_setglobal id e')
   | pr_getlocal:
     forall hs s locs n hv,
-      List.nth_error locs (nat_of_N n) = Some hv ->
+      locs !! (nat_of_N n) = Some hv ->
       pure_reduce hs s locs (HE_getlocal n) hs s locs (HE_value hv)
   | pr_getlocal_trap:
     forall hs s locs n,
-      List.nth_error locs (nat_of_N n) = None ->
+      locs !! (nat_of_N n) = None ->
       pure_reduce hs s locs (HE_getlocal n) hs s locs (HE_value HV_trap)
   | pr_setlocal:
-    forall hs s locs n id locs' hv hvd,
+    forall hs s locs n id locs' hv,
       hs !! id = Some (Some hv) ->
       (nat_of_N n) < length locs ->
-      locs' = set_nth hvd locs (nat_of_N n) hv ->
+      locs' = list_insert (N.to_nat n) hv locs ->
       pure_reduce hs s locs (HE_setlocal n id) hs s locs' (HE_value hv)
   | pr_setlocal_trap1:
     forall hs s locs n id,
@@ -125,7 +125,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   | pr_call_wasm:
     forall hs s ids cl id i j vts bes tf vs tn tm vars locs,
       hs !! id = Some (Some (HV_wov (WOV_funcref (Mk_funcidx i)))) ->
-      List.nth_error s.(s_funcs) i = Some cl ->
+      s.(s_funcs) !! i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
       list_extra.those2 (map (fun id => hs !! id) ids) = Some vars ->
@@ -144,7 +144,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   | pr_call_trap3:
     forall hs s locs id ids i,
       hs !! id = Some (Some (HV_wov (WOV_funcref (Mk_funcidx i)))) ->
-      List.nth_error s.(s_funcs) i = None ->
+      s.(s_funcs) !! i = None ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_trap4:
     forall hs s locs id ids,
@@ -153,7 +153,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   | pr_call_wasm_trap1:
     forall hs s locs id ids i cl j tf vts bes vars tn tm,
       hs !! id = Some (Some (HV_wov (WOV_funcref (Mk_funcidx i)))) ->
-      List.nth_error s.(s_funcs) i = Some cl ->
+      s.(s_funcs) !! i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
       list_extra.those2 (map (fun id => hs !! id) ids) = Some vars ->
@@ -162,7 +162,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   | pr_call_wasm_trap2:
     forall hs s locs id ids i cl j tf vts bes vars tn tm vs,
       hs !! id = Some (Some (HV_wov (WOV_funcref (Mk_funcidx i)))) ->
-      List.nth_error s.(s_funcs) i = Some cl ->
+      s.(s_funcs) !! i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
       list_extra.those2 (map (fun id => hs !! id) ids) = Some vars ->
@@ -172,7 +172,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   | pr_call_host:
     forall hs s ids cl id i n e tf tn tm vars vs locs,
       hs !! id = Some (Some (HV_wov (WOV_funcref (Mk_funcidx i)))) ->
-      List.nth_error s.(s_funcs) i = Some cl ->
+      s.(s_funcs) !! i = Some cl ->
       cl = FC_func_host tf n e ->
       tf = Tf tn tm ->
       list_extra.those2 (map (fun id => hs !! id) ids) = Some vars ->
@@ -187,19 +187,19 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       n = length s.(s_tables) ->
       pure_reduce hs s locs (HE_wasm_table_create len) hs s' locs (HE_value (HV_wov (WOV_tableref (Mk_tableidx n))))
   | pr_table_set:
-    forall hs s locs idt n id v tn tab tab' s' tabd fn hvd,
+    forall hs s locs idt n id v tn tab tab' s' fn,
       hs !! idt = Some (Some (HV_wov (WOV_tableref (Mk_tableidx tn)))) ->
-      List.nth_error s.(s_tables) tn = Some tab ->
+      s.(s_tables) !! tn = Some tab ->
       hs !! id = Some (Some v) ->
       v = HV_wov (WOV_funcref (Mk_funcidx fn)) ->
-      tab' = {|table_data := set_nth hvd tab.(table_data) n (Some fn); table_max_opt := tab.(table_max_opt) |} ->
-      s' = {|s_funcs := s.(s_funcs); s_tables := set_nth tabd s.(s_tables) tn tab'; s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
+      tab' = {|table_data := list_insert n (Some fn) tab.(table_data); table_max_opt := tab.(table_max_opt) |} ->
+      s' = {|s_funcs := s.(s_funcs); s_tables := list_insert tn tab' s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
       pure_reduce hs s locs (HE_wasm_table_set idt (N_of_nat n) id) hs s' locs (HE_value v)
   | pr_table_get:
     forall hs s locs idt n tn tab fn,
       hs !! idt = Some (Some (HV_wov (WOV_tableref (Mk_tableidx tn)))) ->
-      List.nth_error s.(s_tables) tn = Some tab ->
-      List.nth_error tab.(table_data) n = Some (Some fn) ->
+      s.(s_tables) !! tn = Some tab ->
+      tab.(table_data) !! n = Some (Some fn) ->
       pure_reduce hs s locs (HE_wasm_table_get idt (N_of_nat n)) hs s locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx fn))))
   | pr_memory_create:
     forall hs s locs s' sz sz_lim n,
@@ -207,26 +207,26 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       n = length s.(s_mems) ->
       pure_reduce hs s locs (HE_wasm_memory_create sz sz_lim) hs s' locs (HE_value (HV_wov (WOV_memoryref (Mk_memidx n))))
   | pr_memory_set:
-    forall hs s locs idm n id mn m m' md' s' memd b,
+    forall hs s locs idm n id md' mn m m' s' b,
       hs !! idm = Some (Some (HV_wov (WOV_memoryref (Mk_memidx mn)))) ->
-      List.nth_error s.(s_mems) mn = Some m ->
+      s.(s_mems) !! mn = Some m ->
       hs !! id = Some (Some (HV_byte b)) ->
       memory_list.mem_update n b m.(mem_data) = Some md' ->
       m' = {|mem_data := md'; mem_max_opt := m.(mem_max_opt) |} ->
-      s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := set_nth memd s.(s_mems) mn m'; s_globals := s.(s_globals) |} ->
+      s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := list_insert mn m' s.(s_mems); s_globals := s.(s_globals) |} ->
       pure_reduce hs s locs (HE_wasm_memory_set idm n id) hs s' locs (HE_value (HV_byte b))
   | pr_memory_get:
     forall hs s locs idm n b m mn,
       hs !! idm = Some (Some (HV_wov (WOV_memoryref (Mk_memidx mn)))) ->
-      List.nth_error s.(s_mems) mn = Some m ->
+      s.(s_mems) !! mn = Some m ->
       memory_list.mem_lookup n m.(mem_data) = Some b ->
       pure_reduce hs s locs (HE_wasm_memory_get idm n) hs s locs (HE_value (HV_byte b))
   | pr_memory_grow:
-    forall hs s s' locs idm n m m' mn memd,
+    forall hs s s' locs idm n m m' mn,
       hs !! idm = Some (Some (HV_wov (WOV_memoryref (Mk_memidx mn)))) ->
-      List.nth_error s.(s_mems) mn = Some m ->
+      s.(s_mems) !! mn = Some m ->
       mem_grow m n = Some m' ->
-      s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := set_nth memd s.(s_mems) mn m'; s_globals := s.(s_globals) |} ->
+      s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := list_insert mn m' s.(s_mems); s_globals := s.(s_globals) |} ->
       pure_reduce hs s locs (HE_wasm_memory_grow idm n) hs s' locs (HE_value (HV_wasm_value (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N (mem_size m'))))))
   | pr_globals_create:
     forall hs s locs s' g n,
@@ -234,14 +234,14 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       n = length s.(s_globals) ->
       pure_reduce hs s locs (HE_wasm_global_create g) hs s' locs (HE_value (HV_wov (WOV_globalref (Mk_globalidx n))))
   | pr_global_set:
-    forall hs s locs gn idg id s' v g g' gd,
+    forall hs s locs gn idg id s' v g g',
       hs !! id = Some (Some (HV_wasm_value v)) ->
       hs !! idg = Some (Some (HV_wov (WOV_globalref (Mk_globalidx gn)))) ->
-      List.nth_error s.(s_globals) gn = Some g ->
+      s.(s_globals) !! gn = Some g ->
       g.(g_mut) = MUT_mut ->
       typeof v = typeof (g.(g_val)) ->
       g' = {|g_mut := MUT_mut; g_val := v|} ->
-      s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := set_nth gd s.(s_globals) gn g'|} ->
+      s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := list_insert gn g' s.(s_globals)|} ->
       pure_reduce hs s locs (HE_wasm_global_set idg id) hs s' locs (HE_value (HV_wasm_value v))
   | pr_global_get:
     forall hs s locs idg g gn v,
@@ -288,19 +288,19 @@ with wasm_reduce : host_state -> store_record -> datatypes.frame -> list adminis
   (** calling operations **)
   | wr_call :
       forall s f i a hs,
-        List.nth_error f.(f_inst).(inst_funcs) i = Some a ->
+        f.(f_inst).(inst_funcs) !! i = Some a ->
         wasm_reduce hs s f [::AI_basic (BI_call i)] hs s f [::AI_invoke a]
   | wr_call_indirect_success :
       forall s f i a cl tf c hs,
         stab_addr s f (Wasm_int.nat_of_uint i32m c) = Some a ->
-        List.nth_error s.(s_funcs) a = Some cl ->
+        s.(s_funcs) !! a = Some cl ->
         cl_type cl = Some tf ->
         stypes s f.(f_inst) i = Some tf ->
         wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_invoke a]
   | wr_call_indirect_failure1 :
       forall s f i a cl tf c hs,
         stab_addr s f (Wasm_int.nat_of_uint i32m c) = Some a ->
-        List.nth_error s.(s_funcs) a = Some cl ->
+        s.(s_funcs) !! a = Some cl ->
         cl_type cl = Some tf ->
         stypes s f.(f_inst) i <> Some tf ->
         wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_trap]
@@ -310,7 +310,7 @@ with wasm_reduce : host_state -> store_record -> datatypes.frame -> list adminis
         wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_trap]
   | wr_invoke_native :
       forall a cl t1s t2s ts es ves vcs n m k zs s f f' i hs,
-        List.nth_error s.(s_funcs) a = Some cl ->
+        s.(s_funcs) !! a = Some cl ->
         cl = FC_func_native i (Tf t1s t2s) ts es ->
         ves = v_to_e_list vcs ->
         length vcs = n ->
@@ -324,7 +324,7 @@ with wasm_reduce : host_state -> store_record -> datatypes.frame -> list adminis
   | wr_invoke_host :
     (* TODO: check *)
     forall a cl e tf t1s t2s ves vcs m n s s' f hs hs' vs,
-      List.nth_error s.(s_funcs) a = Some cl ->
+      s.(s_funcs) !! a = Some cl ->
       cl = FC_func_host tf n e ->
       tf = Tf t1s t2s ->
       ves = v_to_e_list vcs ->
@@ -360,12 +360,12 @@ with wasm_reduce : host_state -> store_record -> datatypes.frame -> list adminis
   (** get, set, load, and store operations **)
   | wr_get_local :
       forall f v j s hs,
-        List.nth_error f.(f_locs) j = Some v ->
+        f.(f_locs) !! j = Some v ->
         wasm_reduce hs s f [::AI_basic (BI_get_local j)] hs s f [::AI_basic (BI_const v)]
   | wr_set_local :
-      forall f f' i v s vd hs,
+      forall f f' i v s hs,
         f'.(f_inst) = f.(f_inst) ->
-        f'.(f_locs) = set_nth vd f.(f_locs) i v ->
+        f'.(f_locs) = list_insert i v f.(f_locs) ->
         wasm_reduce hs s f [::AI_basic (BI_const v); AI_basic (BI_set_local i)] hs s f' [::]
   | wr_get_global :
       forall s f i v hs,
@@ -378,88 +378,88 @@ with wasm_reduce : host_state -> store_record -> datatypes.frame -> list adminis
   | wr_load_success :
     forall s i f t bs k a off m hs,
       smem_ind s f.(f_inst) = Some i ->
-      List.nth_error s.(s_mems) i = Some m ->
+      s.(s_mems) !! i = Some m ->
       load m (Wasm_int.N_of_uint i32m k) off (t_length t) = Some bs ->
       wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_load t None a off)] hs s f [::AI_basic (BI_const (wasm_deserialise bs t))]
   | wr_load_failure :
     forall s i f t k a off m hs,
       smem_ind s f.(f_inst) = Some i ->
-      List.nth_error s.(s_mems) i = Some m ->
+      s.(s_mems) !! i = Some m ->
       load m (Wasm_int.N_of_uint i32m k) off (t_length t) = None ->
       wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_load t None a off)] hs s f [::AI_trap]
   | wr_load_packed_success :
     forall s i f t tp k a off m bs sx hs,
       smem_ind s f.(f_inst) = Some i ->
-      List.nth_error s.(s_mems) i = Some m ->
+      s.(s_mems) !! i = Some m ->
       load_packed sx m (Wasm_int.N_of_uint i32m k) off (tp_length tp) (t_length t) = Some bs ->
       wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_load t (Some (tp, sx)) a off)] hs s f [::AI_basic (BI_const (wasm_deserialise bs t))]
   | wr_load_packed_failure :
     forall s i f t tp k a off m sx hs,
       smem_ind s f.(f_inst) = Some i ->
-      List.nth_error s.(s_mems) i = Some m ->
+      s.(s_mems) !! i = Some m ->
       load_packed sx m (Wasm_int.N_of_uint i32m k) off (tp_length tp) (t_length t) = None ->
       wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_load t (Some (tp, sx)) a off)] hs s f [::AI_trap]
   | wr_store_success :
     forall t v s i f mem' k a off m hs,
       types_agree t v ->
       smem_ind s f.(f_inst) = Some i ->
-      List.nth_error s.(s_mems) i = Some m ->
+      s.(s_mems) !! i = Some m ->
       store m (Wasm_int.N_of_uint i32m k) off (bits v) (t_length t) = Some mem' ->
       wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (BI_store t None a off)] hs (upd_s_mem s (update_list_at s.(s_mems) i mem')) f [::]
   | wr_store_failure :
     forall t v s i f m k off a hs,
       types_agree t v ->
       smem_ind s f.(f_inst) = Some i ->
-      List.nth_error s.(s_mems) i = Some m ->
+      s.(s_mems) !! i = Some m ->
       store m (Wasm_int.N_of_uint i32m k) off (bits v) (t_length t) = None ->
       wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (BI_store t None a off)] hs s f [::AI_trap]
   | wr_store_packed_success :
     forall t v s i f m k off a mem' tp hs,
       types_agree t v ->
       smem_ind s f.(f_inst) = Some i ->
-      List.nth_error s.(s_mems) i = Some m ->
+      s.(s_mems) !! i = Some m ->
       store_packed m (Wasm_int.N_of_uint i32m k) off (bits v) (tp_length tp) = Some mem' ->
       wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (BI_store t (Some tp) a off)] hs (upd_s_mem s (update_list_at s.(s_mems) i mem')) f [::]
   | wr_store_packed_failure :
     forall t v s i f m k off a tp hs,
       types_agree t v ->
       smem_ind s f.(f_inst) = Some i ->
-      List.nth_error s.(s_mems) i = Some m ->
+      s.(s_mems) !! i = Some m ->
       store_packed m (Wasm_int.N_of_uint i32m k) off (bits v) (tp_length tp) = None ->
       wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 k)); AI_basic (BI_const v); AI_basic (BI_store t (Some tp) a off)] hs s f [::AI_trap]
 
   (** memory **)
   | wr_current_memory :
-      forall i f m n s hs,
-        smem_ind s f.(f_inst) = Some i ->
-        List.nth_error s.(s_mems) i = Some m ->
-        mem_size m = n ->
-        wasm_reduce hs s f [::AI_basic (BI_current_memory)] hs s f [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N n))))]
+    forall i f m n s hs,
+      smem_ind s f.(f_inst) = Some i ->
+      s.(s_mems) !! i = Some m ->
+      mem_size m = n ->
+      wasm_reduce hs s f [::AI_basic (BI_current_memory)] hs s f [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N n))))]
   | wr_grow_memory_success :
     forall s i f m n mem' c hs,
       smem_ind s f.(f_inst) = Some i ->
-      List.nth_error s.(s_mems) i = Some m ->
+      s.(s_mems) !! i = Some m ->
       mem_size m = n ->
       mem_grow m (Wasm_int.N_of_uint i32m c) = Some mem' ->
       wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic BI_grow_memory] hs (upd_s_mem s (update_list_at s.(s_mems) i mem')) f [::AI_basic (BI_const (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N n))))]
   | wr_grow_memory_failure :
-      forall i f m n s c hs,
-        smem_ind s f.(f_inst) = Some i ->
-        List.nth_error s.(s_mems) i = Some m ->
-        mem_size m = n ->
-        wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic BI_grow_memory] hs s f [::AI_basic (BI_const (VAL_int32 int32_minus_one))]
+    forall i f m n s c hs,
+      smem_ind s f.(f_inst) = Some i ->
+      s.(s_mems) !!i = Some m ->
+      mem_size m = n ->
+      wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic BI_grow_memory] hs s f [::AI_basic (BI_const (VAL_int32 int32_minus_one))]
 
   (** label and local **)
   | wr_label :
-      forall s f es les s' f' es' les' k lh hs hs',
-        wasm_reduce hs s f es hs' s' f' es' ->
-        lfilled k lh es les ->
-        lfilled k lh es' les' ->
-        wasm_reduce hs s f les hs' s' f' les'
+    forall s f es les s' f' es' les' k lh hs hs',
+      wasm_reduce hs s f es hs' s' f' es' ->
+      lfilled k lh es les ->
+      lfilled k lh es' les' ->
+      wasm_reduce hs s f les hs' s' f' les'
   | wr_local :
-      forall s f es s' f' es' n f0 hs hs',
-        wasm_reduce hs s f es hs' s' f' es' ->
-        wasm_reduce hs s f0 [::AI_local n f es] hs' s' f0 [::AI_local n f' es']
+    forall s f es s' f' es' n f0 hs hs',
+      wasm_reduce hs s f es hs' s' f' es' ->
+      wasm_reduce hs s f0 [::AI_local n f es] hs' s' f0 [::AI_local n f' es']
 .
 
 Inductive head_reduce: state -> expr -> state -> expr -> Prop :=

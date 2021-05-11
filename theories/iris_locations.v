@@ -93,9 +93,6 @@ Inductive heap_val : Type :=
   | hval_glob: global -> heap_val
 .
 
-Definition gmap_of_list {T: Type} (l: list T) : gmap N (option T) :=
-    list_to_map (imap (fun n x => (N.of_nat n, Some x)) l).
-
 (* Implemented using imap, should be the optimal now *)
 Definition heap_gmap_of_list {T: Type} (l: list T) (f: N -> loc) (g: T -> heap_val) : gmap loc (option heap_val) :=
   list_to_map (imap (fun n x => (f (N.of_nat n), Some (g x))) l).
@@ -183,6 +180,29 @@ Proof.
     simpl in Heq. apply HInj1 in Heq. lia.
 Qed.
     
+Definition gmap_of_list {T: Type} (l: list T) : gmap N (option T) :=
+  list_to_map (imap (fun n x => (N.of_nat n, Some x)) l).
+
+Lemma gmap_of_list_lookup {T: Type} (l: list T) n:
+  (gmap_of_list l) !! n = option_map (fun x => Some x) (l !! (N.to_nat n)).
+Proof with resolve_finmap.
+  unfold gmap_of_list, option_map.
+  remember_lookup.
+  destruct lookup_res...
+  - rewrite Nat2N.id. by rewrite Helem.
+  - apply Nat2N.inj in H1. subst. by rewrite Helem in Helem0.
+  - apply nodup_imap_inj1. move => n1 n2 t1 t2 Heq.
+    inversion Heq.
+    by apply Nat2N.inj in H1.
+  - destruct (l !! (N.to_nat n)) eqn: Hlookup => //.
+    exfalso. apply H2. clear H2.
+    apply elem_of_list_fmap.
+    exists (n, Some t). split => //.
+    apply elem_of_lookup_imap.
+    exists (N.to_nat n), t. split => //.
+    by rewrite N2Nat.id.
+Qed.
+
 Lemma heapg_of_list_lookup {T: Type} (l: list T) (f: N -> loc) (g: T -> heap_val) (n: N):
   Inj eq eq f ->
   (heap_gmap_of_list l f g) !! (f n) = option_map (fun x => Some (g x)) (l !! (N.to_nat n)).

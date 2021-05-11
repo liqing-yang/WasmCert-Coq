@@ -419,4 +419,31 @@ Proof.
   (* Now we've actually proved this thing finally.. *)  
 Qed.
 
+Lemma wp_getlocal s E n q v:
+  {{{ n ↦ₗ{ q } v }}} (HE_getlocal n) @ s; E
+  {{{ RET v; n ↦ₗ{ q } v }}}.
+Proof.
+  iIntros (Φ) "Hl HΦ".
+  iApply wp_lift_atomic_head_step_no_fork; first done.
+  iIntros (σ1 κ κs m) "Hσ !>".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs [Hlocs Ho]]".
+  iDestruct (gen_heap_valid with "Hlocs Hl") as %?.
+  rewrite gmap_of_list_lookup in H.
+  unfold option_map in H.
+  remember (locs !! N.to_nat n) as lookup_res eqn:Hlookup; destruct lookup_res; inversion H; subst; clear H.
+  iSplit.
+  - unfold head_reducible. inv_head_step. iExists [], (HE_value v), (hs, ws, locs), [].
+    simpl in *. unfold head_step. repeat iSplit => //.
+    iPureIntro.
+    apply purer_headr. by apply pr_getlocal. 
+  - iIntros (e2 σ2 efs Hstep); inv_head_step.
+    + repeat iModIntro; repeat (iSplit; first done).
+      rewrite H4 in Hlookup. inversion Hlookup.
+      iFrame. by iApply "HΦ".
+    + by rewrite H4 in Hlookup.
+Qed.
+
+
 End lifting.
