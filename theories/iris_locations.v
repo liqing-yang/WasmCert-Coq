@@ -16,6 +16,106 @@ From iris.bi.lib Require Import fractional.
 From iris.base_logic.lib Require Export gen_heap proph_map gen_inv_heap.
 From iris.program_logic Require Export weakestpre total_weakestpre.
 
+(* automatically remembers a lookup result and make the hypothesis ready for destruct *)
+Ltac remember_lookup :=
+  match goal with
+  | |- context C [?m !! ?x = _] =>
+    let Hlookup := fresh "Hlookup" in
+    remember (m !! x) as lookup_res eqn: Hlookup; symmetry in Hlookup
+  end.
+
+(* resolving predicates related to maps and lookups in stdpp. *)
+Ltac resolve_finmap :=
+  repeat match goal with
+         | H: (list_to_map _) !! _ = Some _ |- _ =>
+           let H2 := fresh "H2" in 
+           apply elem_of_list_to_map in H as H2; clear H
+         | H: (list_to_map _) !! _ = None |- _ =>
+           let H2 := fresh "H2" in 
+           apply not_elem_of_list_to_map in H as H2; clear H
+         | H: _ ∈ fmap _ _ |- _ =>
+           let Heq := fresh "Heq" in
+           let Helem := fresh "Helem" in
+           apply elem_of_list_fmap in H; destruct H as [? [Heq Helem]]; subst; simpl in *
+         | H: ?x ∈ map_to_list _ |- _ =>
+           destruct x; apply elem_of_map_to_list in H
+         | H: _ ∈ imap _ _ |- _ =>
+           let Heq := fresh "Heq" in
+           let Helem := fresh "Helem" in
+           apply elem_of_lookup_imap in H; destruct H as [? [? [Heq Helem]]]
+         | H: (_, _) = (_, _) |- _ =>
+           inversion H; subst; clear H
+         | H: _ |- NoDup (fmap fst _) =>
+           apply NoDup_fmap_fst; intros; subst; simpl in *; try by []
+         | H: _ |- NoDup (map_to_list _) =>
+           apply NoDup_map_to_list; try by []
+         | H1: ?m !! ?x = _, H2: ?m !! ?x = _ |- _ =>
+           rewrite H2 in H1; subst; simpl in *; clear H2
+         | H: Some _ = Some _ |- _ =>
+           inversion H; subst; simpl in *; try by []
+         | H: _ |- (_, _) ∈ map_to_list _ =>
+           apply elem_of_map_to_list
+         | _ => simpl in *; try by eauto
+         end.
+
+(* Turns out that this is surprisingly not a standard lemma in stdpp and non-trivial to prove. *)
+Lemma nodup_imap_inj1 {T X: Type} (l: list T) (f: nat -> T -> X):
+  (forall n1 n2 t1 t2, f n1 t1 = f n2 t2 -> n1 = n2) ->
+  NoDup (imap f l).
+Proof.
+  move: f.
+  induction l => //=; first by intros; apply NoDup_nil.
+  move => f HInj1. apply NoDup_cons. split.
+  - move => HContra. apply elem_of_lookup_imap in HContra.
+    destruct HContra as [i [y [Heq Helem]]].
+    by apply HInj1 in Heq.
+  - apply IHl. move => n1 n2 t1 t2 Heq.
+    simpl in Heq. apply HInj1 in Heq. lia.
+Qed.
+    
+Definition gmap_of_list {T: Type} (l: list T) : gmap N (option T) :=
+  list_to_map (imap (fun n x => (N.of_nat n, Some x)) l).
+
+Lemma gmap_of_list_lookup {T: Type} (l: list T) n:
+  (gmap_of_list l) !! n = option_map (fun x => Some x) (l !! (N.to_nat n)).
+Proof with resolve_finmap.
+  unfold gmap_of_list, option_map.
+  remember_lookup.
+  destruct lookup_res...
+  - rewrite Nat2N.id. by rewrite Helem.
+  - apply Nat2N.inj in H1. subst. by rewrite Helem in Helem0.
+  - apply nodup_imap_inj1. move => n1 n2 t1 t2 Heq.
+    inversion Heq.
+    by apply Nat2N.inj in H1.
+  - destruct (l !! (N.to_nat n)) eqn: Hlookup => //.
+    exfalso. apply H2. clear H2.
+    apply elem_of_list_fmap.
+    exists (n, Some t). split => //.
+    apply elem_of_lookup_imap.
+    exists (N.to_nat n), t. split => //.
+    by rewrite N2Nat.id.
+Qed.
+
+(* Commutativity between gmap_of_list and list_insert. *)
+Lemma gmap_of_list_insert {T: Type} (l: list T) (v: T) n:
+  N.to_nat n < length l ->
+  gmap_of_list (<[N.to_nat n:=v]> l) = <[n:=Some v]> (gmap_of_list l).
+Proof with resolve_finmap.
+  move => Hlen.
+  apply map_eq. move => i.
+  rewrite gmap_of_list_lookup.
+  unfold option_map.
+  destruct (decide (i = n)).
+  - subst. rewrite lookup_insert. by rewrite list_lookup_insert.
+  - rewrite lookup_insert_ne => //.
+    rewrite list_lookup_insert_ne => //.
+    + rewrite gmap_of_list_lookup.
+      by unfold option_map.
+    + move => HContra. apply n0.
+      by apply N2Nat.inj.    
+Qed.
+  
+(* Old
 Inductive loc : Type :=
   | loc_host_var: id -> loc
   | loc_local_var: N -> loc
@@ -122,86 +222,6 @@ Definition heap_gmap_of_hs (hs: host_state) : gmap loc (option heap_val) :=
   list_to_map
   (fmap (fun p => match p with | (x, y) => (loc_host_var x, option_map (fun y => hval_val y) y) end)
         (map_to_list hs)).
-
-(* automatically remembers a lookup result and make the hypothesis ready for destruct *)
-Ltac remember_lookup :=
-  match goal with
-  | |- context C [?m !! ?x = _] =>
-    let Hlookup := fresh "Hlookup" in
-    remember (m !! x) as lookup_res eqn: Hlookup; symmetry in Hlookup
-  end.
-
-(* resolving predicates related to maps and lookups in stdpp. *)
-Ltac resolve_finmap :=
-  repeat match goal with
-         | H: (list_to_map _) !! _ = Some _ |- _ =>
-           let H2 := fresh "H2" in 
-           apply elem_of_list_to_map in H as H2; clear H
-         | H: (list_to_map _) !! _ = None |- _ =>
-           let H2 := fresh "H2" in 
-           apply not_elem_of_list_to_map in H as H2; clear H
-         | H: _ ∈ fmap _ _ |- _ =>
-           let Heq := fresh "Heq" in
-           let Helem := fresh "Helem" in
-           apply elem_of_list_fmap in H; destruct H as [? [Heq Helem]]; subst; simpl in *
-         | H: ?x ∈ map_to_list _ |- _ =>
-           destruct x; apply elem_of_map_to_list in H
-         | H: _ ∈ imap _ _ |- _ =>
-           let Heq := fresh "Heq" in
-           let Helem := fresh "Helem" in
-           apply elem_of_lookup_imap in H; destruct H as [? [? [Heq Helem]]]
-         | H: (_, _) = (_, _) |- _ =>
-           inversion H; subst; clear H
-         | H: _ |- NoDup (fmap fst _) =>
-           apply NoDup_fmap_fst; intros; subst; simpl in *; try by []
-         | H: _ |- NoDup (map_to_list _) =>
-           apply NoDup_map_to_list; try by []
-         | H1: ?m !! ?x = _, H2: ?m !! ?x = _ |- _ =>
-           rewrite H2 in H1; subst; simpl in *; clear H2
-         | H: Some _ = Some _ |- _ =>
-           inversion H; subst; simpl in *; try by []
-         | H: _ |- (_, _) ∈ map_to_list _ =>
-           apply elem_of_map_to_list
-         | _ => simpl in *; try by eauto
-         end.
-
-(* Turns out that this is surprisingly not a standard lemma in stdpp and non-trivial to prove. *)
-Lemma nodup_imap_inj1 {T X: Type} (l: list T) (f: nat -> T -> X):
-  (forall n1 n2 t1 t2, f n1 t1 = f n2 t2 -> n1 = n2) ->
-  NoDup (imap f l).
-Proof.
-  move: f.
-  induction l => //=; first by intros; apply NoDup_nil.
-  move => f HInj1. apply NoDup_cons. split.
-  - move => HContra. apply elem_of_lookup_imap in HContra.
-    destruct HContra as [i [y [Heq Helem]]].
-    by apply HInj1 in Heq.
-  - apply IHl. move => n1 n2 t1 t2 Heq.
-    simpl in Heq. apply HInj1 in Heq. lia.
-Qed.
-    
-Definition gmap_of_list {T: Type} (l: list T) : gmap N (option T) :=
-  list_to_map (imap (fun n x => (N.of_nat n, Some x)) l).
-
-Lemma gmap_of_list_lookup {T: Type} (l: list T) n:
-  (gmap_of_list l) !! n = option_map (fun x => Some x) (l !! (N.to_nat n)).
-Proof with resolve_finmap.
-  unfold gmap_of_list, option_map.
-  remember_lookup.
-  destruct lookup_res...
-  - rewrite Nat2N.id. by rewrite Helem.
-  - apply Nat2N.inj in H1. subst. by rewrite Helem in Helem0.
-  - apply nodup_imap_inj1. move => n1 n2 t1 t2 Heq.
-    inversion Heq.
-    by apply Nat2N.inj in H1.
-  - destruct (l !! (N.to_nat n)) eqn: Hlookup => //.
-    exfalso. apply H2. clear H2.
-    apply elem_of_list_fmap.
-    exists (n, Some t). split => //.
-    apply elem_of_lookup_imap.
-    exists (N.to_nat n), t. split => //.
-    by rewrite N2Nat.id.
-Qed.
 
 Lemma heapg_of_list_lookup {T: Type} (l: list T) (f: N -> loc) (g: T -> heap_val) (n: N):
   Inj eq eq f ->
@@ -569,3 +589,4 @@ Proof with resolve_finmap.
       intros ?; by apply HN => //; subst.
 Qed.
 
+*)

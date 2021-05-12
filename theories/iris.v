@@ -419,6 +419,7 @@ Proof.
   (* Now we've actually proved this thing finally.. *)  
 Qed.
 
+(* This is rather easy, following the same idea as getglobal. *)
 Lemma wp_getlocal s E n q v:
   {{{ n ↦ₗ{ q } v }}} (HE_getlocal n) @ s; E
   {{{ RET v; n ↦ₗ{ q } v }}}.
@@ -445,5 +446,48 @@ Proof.
     + by rewrite H4 in Hlookup.
 Qed.
 
-
+(* This is now very interesting and a bit different to setglobal, since we need to retrieve the
+     value to be set from a resource first. *)
+Lemma wp_setlocal s E n id w v:
+  {{{ n ↦ₗ w ∗ id ↦ₕ v }}} (HE_setlocal n id) @ s; E
+  {{{ RET v; n ↦ₗ v }}}.
+Proof.
+  iIntros (Φ) "[Hl Hh] HΦ".
+  iApply wp_lift_atomic_head_step_no_fork; first done.
+  iIntros (σ1 κ κs m) "Hσ !>".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs [Hlocs Ho]]".
+  (* This is the first case where we have two types of resources in the precondition. We do
+       iDestruct on each of them to gather the required information into the Coq context first,
+       as the Iris propositions won't be available to use after iPureIntro. *)
+  iDestruct (gen_heap_valid with "Hlocs Hl") as %?.
+  rewrite gmap_of_list_lookup in H.
+  unfold option_map in H.
+  remember (locs !! N.to_nat n) as lookup_res eqn:Hlookup_locs; destruct lookup_res; inversion H; subst; clear H.
+  iDestruct (gen_heap_valid with "Hhs Hh") as %?.
+  iSplit.
+  - unfold head_reducible. inv_head_step. iExists [], (HE_value v), (hs, ws, <[(N.to_nat n) := v]>locs), [].
+    simpl in *. unfold head_step. repeat iSplit => //.   
+    iPureIntro.
+    apply purer_headr. apply pr_setlocal => //.
+    by apply lookup_lt_Some with (x := w).
+  - iIntros (e2 σ2 efs Hstep); inv_head_step.
+    + iModIntro.
+      (* Don't just iModIntro again! This would throw the update modality away wastefully. *)
+      iMod (gen_heap_update with "Hlocs Hl") as "[Hlocs Hl]".
+      simpl.
+      repeat iModIntro.
+      iSplit => //.
+      (* It takes rather long time for Iris to find the correct frame. *)
+      iFrame.
+      simpl.
+      rewrite gmap_of_list_insert => //.
+      iSplitL "Hlocs" => //.
+      by iApply "HΦ".
+    + by rewrite H11 in H.
+    + symmetry in Hlookup_locs. apply lookup_lt_Some in Hlookup_locs.
+      lia.
+Qed.
+  
 End lifting.
