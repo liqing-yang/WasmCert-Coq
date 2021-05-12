@@ -489,5 +489,49 @@ Proof.
     + symmetry in Hlookup_locs. apply lookup_lt_Some in Hlookup_locs.
       lia.
 Qed.
+
+Print host_expr.
+
+Print HE_if.
+
+(* We now get to some control flow instructions. It's a bit tricky since rules like these
+     do not need to be explicitly dealt with in Heaplang, but instead taken automatically by 
+     defining it as an evaluation context. We have to see what needs to be done here. For 
+     example, the following version doesn't seem to be provable at the moment. *)
+Lemma wp_if_true s E id v w e1 e2 P Q:
+  v <> HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
+  {{{ P }}} e1 @ s; E {{{ RET w; Q }}} ->
+  {{{ id ↦ₕ v ∗ P }}} (HE_if id e1 e2) @ s; E
+  {{{ RET w; id ↦ₕ v ∗ Q }}}.
+Proof.
+  move => HNzero HTriple.
+  iIntros (Φ) "[Hh HP] HΦ".
+  iApply wp_lift_atomic_head_step_no_fork; first done.
+  iIntros (σ1 κ κs m) "Hσ !>".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs Ho]".
+  iDestruct (gen_heap_valid with "Hhs Hh") as %?.
+  iSplit.
+  - unfold head_reducible. inv_head_step. iExists [], e1, (hs, ws, locs), [].
+    simpl in *. unfold head_step. repeat iSplit => //.   
+    iPureIntro.
+    apply purer_headr. by apply pr_if_true with (hv := v).
+  - iIntros (e σ2 efs Hstep); inv_head_step.
+    + repeat iModIntro. repeat iSplit => //.
+      iFrame.
+      unfold from_option.
+      destruct (to_val e) eqn:Hval => //.
+      * destruct e => //.
+        simpl in Hval. inversion Hval; subst; clear Hval.
+        assert (w = v0).
+        { admit. }
+        assert (P = Q).
+        { admit. }
+        subst. iApply "HΦ". by iFrame.
+      * admit. 
+    + by rewrite H in H12.
+Qed.
+
   
 End lifting.
