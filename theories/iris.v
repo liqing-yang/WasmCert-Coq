@@ -396,36 +396,27 @@ Admitted.
      the moment. *)
 Lemma wp_if_true s E id v w e1 e2 P Q:
   v <> HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
-  {{{ P }}} e1 @ s; E {{{ RET w; Q }}} ⊢
-  {{{ id ↦ₕ v ∗ P }}} (HE_if id e1 e2) @ s; E
-  {{{ RET w; id ↦ₕ v ∗ Q }}}.
+  {{{ P ∗ id ↦ₕ v }}} e1 @ s; E {{{ RET w; Q }}} ⊢
+  {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
+  {{{ RET w; Q }}}.
 Proof.
   move => HNzero.
   iIntros "#HT".
   iModIntro.
-  iIntros (Φ) "[Hh HP] HΦ".
-  (* I think this is the reason that the proof cannot proceed -- this is the first case where
-       resolving the expression could take more than one head step. *)
-  iApply wp_lift_atomic_head_step_no_fork; first done.
-  iIntros (σ1 κ κs m) "Hσ !>".
+  iIntros (Φ) "[HP Hh] HΦ".
+  rewrite wp_unfold/ wp_pre/=.
+  iIntros (σ1 κ κs m) "Hσ".
   destruct σ1 as [[hs ws] locs].
-  iSimpl in "Hσ".
-  iDestruct "Hσ" as "[Hhs Ho]".
+  iDestruct "Hσ" as "[Hhs [Hlocs Ho]]".
   iDestruct (gen_heap_valid with "Hhs Hh") as %?.
-  (* What is actually the goal here? We need to prove two things:
-     - the instruction HE_if id e1 e2 is reducible: this is certainly true;
-     - (later) for all resulting state-expression pairs (σ, e), we have under update modality
-         that e must be a value v, and the correct resources represented by the state 
-         interpretation of σ, and that Φ v holds -- where Φ is from expanding the triple.
-       It is unclear why e has to be a value here -- this is the main hindrance in our current 
-         proof. The head_step definition is only defined as one step, therefore we will certainly
-         not expect (HE_if id e1 e2) to be reduced to a value directly.
- *)
+  (* Stuck on how to resolve this fancy update... Too many associated lemmas... *)
+  Search fupd.
+  Unset Printing Notations.
   iSplit.
-  - unfold head_reducible. inv_head_step. iExists [], e1, (hs, ws, locs), [].
-    simpl in *. unfold head_step. repeat iSplit => //.   
-    iPureIntro.
-    apply purer_headr. by apply pr_if_true with (hv := v).
+  - destruct s => //.
+    iPureIntro. apply hs_red_equiv.
+    repeat eexists.
+    by apply pr_if_true with (hv := v).
   - iIntros (e σ2 efs Hstep).
     inv_head_step.
     + repeat iModIntro. repeat iSplit => //.
@@ -437,7 +428,7 @@ Proof.
         iAssert ((⌜ v0 = w ⌝) ∗ (P -∗ Q))%I as "Hval".
         { iApply wp_value_imp. by iApply "HT". }
         iDestruct "Hval" as (Heq) "Hwand".
-        subst. iApply "HΦ". iFrame.
+        subst. iSplit => //. iApply "HΦ". iFrame.
         by iApply "Hwand".
       * admit. 
     + by rewrite H in H12.
