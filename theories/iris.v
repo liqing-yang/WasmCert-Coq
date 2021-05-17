@@ -404,35 +404,29 @@ Proof.
   iIntros "#HT".
   iModIntro.
   iIntros (Φ) "[HP Hh] HΦ".
-  rewrite wp_unfold/ wp_pre/=.
+  rewrite wp_unfold /wp_pre /=.
   iIntros (σ1 κ κs m) "Hσ".
   destruct σ1 as [[hs ws] locs].
   iDestruct "Hσ" as "[Hhs [Hlocs Ho]]".
   iDestruct (gen_heap_valid with "Hhs Hh") as %?.
-  (* Stuck on how to resolve this fancy update... Too many associated lemmas... *)
-  Search fupd.
-  Unset Printing Notations.
-  iSplit.
+  (* iAssert needs to specify which resouces are consumed for proving this assertion. Here we need       everything. *)
+  iAssert (WP e1 @ s; E {{ v, Φ v}})%I with "[HP Hh HΦ]" as "Hwp".
+  { iApply ("HT" with "[HP Hh]"); by iFrame. }
+  rewrite wp_unfold /wp_pre /=.
+  destruct (to_val e1) as [v1|] eqn:He => //.
+  - apply of_to_val in He as <-. admit. (* this should be true at least *)
+  iMod ("Hwp" $! (hs, ws, locs) κ κs m with "[Hhs Hlocs Ho]") as "[% H]"; first by iFrame.
+  iModIntro; iSplit.
   - destruct s => //.
     iPureIntro. apply hs_red_equiv.
-    repeat eexists.
-    by apply pr_if_true with (hv := v).
-  - iIntros (e σ2 efs Hstep).
+    repeat eexists. by apply pr_if_true with (hv := v) => //.
+  - iIntros (e0 σ2 efs HStep).
     inv_head_step.
-    + repeat iModIntro. repeat iSplit => //.
-      iFrame.
-      unfold from_option.
-      destruct (to_val e) eqn:Hval => //.
-      * destruct e => //.
-        simpl in Hval. inversion Hval; subst; clear Hval.
-        iAssert ((⌜ v0 = w ⌝) ∗ (P -∗ Q))%I as "Hval".
-        { iApply wp_value_imp. by iApply "HT". }
-        iDestruct "Hval" as (Heq) "Hwand".
-        subst. iSplit => //. iApply "HΦ". iFrame.
-        by iApply "Hwand".
-      * admit. 
-    + by rewrite H in H12.
+    + iMod ("H" $! e0 (hs', s', locs') [] with "[]") as "H".
+      { (* wait, we're not supposed to take this step... *) admit. }
+      iIntros "!>!>".
+      by iApply "H".
+    + by rewrite H in H13.    
 Qed.
-
  
 End lifting.
