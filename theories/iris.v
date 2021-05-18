@@ -32,6 +32,8 @@ Qed.
 
 Canonical Structure wasm_lang := Language wasm_mixin.
 
+Global Instance Inhabited_wasm_state: Inhabited (language.state wasm_lang) := populate (∅, Build_store_record [::] [::] [::] [::], [::]).
+
 Definition proph_id := unit. (* ??? *)
 
 Class hsG Σ := HsG {
@@ -383,6 +385,13 @@ Print host_expr.
 
 Print HE_if.
 
+Print reducible.
+
+Lemma he_if_reducible: forall id e1 e2 σ,
+  @reducible wasm_lang (HE_if id e1 e2) σ.
+Proof.
+Admitted.
+
 Lemma wp_value_imp s E v w P Q:
   {{{ P }}} (HE_value v) @ s; E {{{ RET w; Q }}} ⊢
   (⌜ v = w ⌝ ∗ (P -∗ Q))%I.
@@ -404,29 +413,20 @@ Proof.
   iIntros "#HT".
   iModIntro.
   iIntros (Φ) "[HP Hh] HΦ".
-  rewrite wp_unfold /wp_pre /=.
-  iIntros (σ1 κ κs m) "Hσ".
-  destruct σ1 as [[hs ws] locs].
-  iDestruct "Hσ" as "[Hhs [Hlocs Ho]]".
-  iDestruct (gen_heap_valid with "Hhs Hh") as %?.
-  (* iAssert needs to specify which resouces are consumed for proving this assertion. Here we need       everything. *)
-  iAssert (WP e1 @ s; E {{ v, Φ v}})%I with "[HP Hh HΦ]" as "Hwp".
-  { iApply ("HT" with "[HP Hh]"); by iFrame. }
-  rewrite wp_unfold /wp_pre /=.
-  destruct (to_val e1) as [v1|] eqn:He => //.
-  - apply of_to_val in He as <-. admit. (* this should be true at least *)
-  iMod ("Hwp" $! (hs, ws, locs) κ κs m with "[Hhs Hlocs Ho]") as "[% H]"; first by iFrame.
-  iModIntro; iSplit.
-  - destruct s => //.
-    iPureIntro. apply hs_red_equiv.
-    repeat eexists. by apply pr_if_true with (hv := v) => //.
-  - iIntros (e0 σ2 efs HStep).
+  iApply wp_lift_pure_step_no_fork.
+  - move => σ1.
+    destruct s => //.
+    by apply he_if_reducible.
+  - intros. by inv_head_step.
+  - iApply fupd_intro => //.
+    repeat iModIntro.
+    iIntros (κ e0 efs σ) "%".
+    destruct σ as [[hs ws] locs].
     inv_head_step.
-    + iMod ("H" $! e0 (hs', s', locs') [] with "[]") as "H".
-      { (* wait, we're not supposed to take this step... *) admit. }
-      iIntros "!>!>".
-      by iApply "H".
-    + by rewrite H in H13.    
+    + iApply ("HT" with "[$]").
+      by iModIntro.
+    + admit.
+    + admit.
 Qed.
  
 End lifting.
