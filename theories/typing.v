@@ -23,6 +23,12 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
+Section Host.
+
+Variable host_function : eqType.
+
+Let function_closure := function_closure host_function.
+Let store_record := store_record host_function.
 
 (* TODO: Documentation *)
 
@@ -307,7 +313,7 @@ Definition memi_agree (ms : list memory) (n : nat) (mem_t : memory_type) : bool 
   end.
 
 Definition functions_agree (fs : seq function_closure) (n : nat) (f : function_type) : bool :=
-  (n < length fs) && (option_map cl_type (List.nth_error fs n) == Some (Some f)).
+  (n < length fs) && (option_map cl_type (List.nth_error fs n) == Some f).
 
 (*
   This is the main point where the typing context in the typing system and the 
@@ -489,9 +495,8 @@ Inductive cl_typing : store_record -> function_closure -> function_type -> Prop 
     C' = upd_local_label_return C (tc_local C ++ t1s ++ ts) ([::t2s] ++ tc_label C) (Some t2s) ->
     be_typing C' es (Tf [::] t2s) ->
     cl_typing s (FC_func_native i tf ts es) (Tf t1s t2s)
-  | cl_typing_host : forall s htf n tf e,
-    host_function_type_to_wasm htf = Some tf ->
-    cl_typing s (FC_func_host htf n e) tf
+  | cl_typing_host : forall s tf h,
+    cl_typing s (FC_func_host tf h) tf
   .
 
 (*
@@ -538,17 +543,16 @@ Scheme e_typing_ind' := Induction for e_typing Sort Prop
   with s_typing_ind' := Induction for s_typing Sort Prop.
 
 Definition cl_typing_self (s : store_record) (fc : function_closure) : Prop :=
-  forall tf, cl_type fc = Some tf ->
+  forall tf, cl_type fc = tf ->
   cl_typing s fc tf.
 
-(* TODO: fix proof *)
-Lemma cl_typing_unique : forall s cl tf, cl_typing s cl tf -> Some tf = cl_type cl.
+Lemma cl_typing_unique : forall s cl tf, cl_typing s cl tf -> tf = cl_type cl.
 Proof.
-(*  move=> s + tf. case.
+  move=> s + tf. case.
   - move => i ts bes t H /=; by inversion H.
-  - move => f h H; by inversion H.*)
-Admitted.
-  
+  - move => f h H; by inversion H.
+Qed.
+    
 Definition cl_type_check_single (s:store_record) (f:function_closure):=
   exists tf, cl_typing s f tf.
 
@@ -594,3 +598,4 @@ Inductive config_typing : store_record -> frame -> seq administrative_instructio
   s_typing s None f es ts ->
   config_typing s f es ts.
 
+End Host.

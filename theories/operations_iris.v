@@ -4,19 +4,12 @@
 From Wasm Require Import common memory_list.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From compcert Require lib.Floats.
-From Wasm Require Export datatypes_properties list_extra.
+From Wasm Require Export datatypes_properties_iris list_extra.
 From Coq Require Import BinNat.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
-
-Section Host.
-
-Variable host_function : eqType.
-  
-Let function_closure := function_closure host_function.
-Let store_record := store_record host_function.
 
 (** read `len` bytes from `m` starting at `start_idx` *)
 Definition read_bytes (m : memory) (start_idx : N) (len : nat) : option bytes :=
@@ -120,6 +113,93 @@ Definition typeof (v : value) : value_type :=
   | VAL_int64 _ => T_i64
   | VAL_float32 _ => T_f32
   | VAL_float64 _ => T_f64
+  end.
+Definition host_wov_typeof (wov: wasm_object_value) : wasm_object_type :=
+  match wov with
+  | WOV_funcref _ => WOT_funcref
+  | WOV_tableref _ => WOT_tableref
+  | WOV_memoryref _ => WOT_memoryref
+  | WOV_globalref _ => WOT_globalref
+  end.
+
+Definition host_typeof (hv : host_value) : option host_type :=
+  match hv with
+  | HV_byte _ => Some HT_byte
+  | HV_wasm_value v => Some (HT_wt (typeof v))
+  | HV_wov wov => Some (HT_wot (host_wov_typeof wov))
+  | HV_module _ => Some HT_moduleref
+  | HV_record _ => Some HT_record
+  | HV_list _ => Some HT_list
+  | HV_trap => None
+  end.
+
+Definition host_value_to_wasm (hv: host_value) : option value :=
+  match hv with
+  | HV_wasm_value v => Some v
+  | _ => None
+  end.
+
+Definition list_host_value_to_wasm (hvs: list host_value) : option (list value) :=
+  list_extra.those (map host_value_to_wasm hvs).
+
+Definition host_type_to_wasm (hvt: host_type) : option value_type :=
+  match hvt with
+  | HT_wt t => Some t
+  | _ => None
+  end.
+
+Definition list_host_type_to_wasm (hvts: list host_type) : option (list value_type) :=
+  list_extra.those (map host_type_to_wasm hvts).
+
+Definition lookup_host_vars (vcs : list i32) hs : option (list host_value) :=
+  list_extra.those
+    (List.map
+      (fun i => hs i)
+      vcs).
+
+(* TODO: maybe change the structure of kvp into a gmap *)
+Fixpoint lookup_kvp (kvp: list (field_name * host_value)) (fname: field_name) :=
+  match kvp with
+  | [::] => None
+  | (f, hv) :: kvp' => if f == fname then Some hv else lookup_kvp kvp' fname
+  end.
+
+Definition lookup_host_vars_as_i32s vcs hs : option (list host_value) :=
+  list_extra.those
+    (List.map
+      (fun x =>
+        match x with
+        | VAL_int32 i =>
+          hs i
+        | _ => None
+        end)
+      vcs).
+
+Fixpoint to_bytelist (l: seq host_value) : option (seq byte) :=
+  match l with
+  | [::] => Some [::]
+  | (HV_byte b) :: l' =>
+    match to_bytelist l' with
+    | Some bl' => Some (b :: bl')
+    | None => None
+    end
+  | _ => None
+  end.
+
+Definition create_table (len: N) : tableinst :=
+  Build_tableinst (List.repeat None len) (Some len).
+
+Definition create_memory (sz: N) (sz_lim: N) :=
+  Build_memory (mem_make #00 sz) (Some sz_lim).
+
+Definition is_funcref (v: host_value) :=
+  match v with
+  | HV_wov wov =>
+    match wov with
+    | WOV_funcref _ => true
+    | _ => false
+    end
+  | _ => false
   end.
 
 Definition option_projl (A B : Type) (x : option (A * B)) : option A :=
@@ -345,7 +425,7 @@ Definition types_agree (t : value_type) (v : value) : bool :=
 Definition cl_type (cl : function_closure) : function_type :=
   match cl with
   | FC_func_native _ tf _ _ => tf
-  | FC_func_host tf _ => tf
+  | FC_func_host tf _ _ => tf
   end.
 
 Definition rglob_is_mut (g : global) : bool :=
@@ -763,6 +843,3 @@ Definition bitzero (t : value_type) : value :=
 Definition n_zeros (ts : seq value_type) : seq value :=
   map bitzero ts.
 
-End Host.
-
-Arguments cl_type {host_function}.

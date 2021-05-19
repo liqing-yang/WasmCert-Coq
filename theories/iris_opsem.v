@@ -6,7 +6,9 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Require Import common operations datatypes datatypes_properties opsem interpreter binary_format_parser iris_base.
+Require Import common datatypes_iris datatypes_properties_iris iris_base operations_iris.
+
+Require Import list_extra.
 
 From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
@@ -15,6 +17,141 @@ From iris.bi.lib Require Import fractional.
 From iris.base_logic.lib Require Export gen_heap proph_map gen_inv_heap.
 From iris.program_logic Require Export weakestpre total_weakestpre.
 From iris.heap_lang Require Import locations.
+
+Inductive reduce_simple : list administrative_instruction -> list administrative_instruction -> Prop :=
+
+(** unop **)
+  | rs_unop : forall v op t,
+    reduce_simple [::AI_basic (BI_const v); AI_basic (BI_unop t op)] [::AI_basic (BI_const (@app_unop op v))]
+                   
+(** binop **)
+  | rs_binop_success : forall v1 v2 v op t,
+    app_binop op v1 v2 = Some v ->
+    reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_binop t op)] [::AI_basic (BI_const v)]
+  | rs_binop_failure : forall v1 v2 op t,
+    app_binop op v1 v2 = None ->
+    reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_binop t op)] [::AI_trap]
+                  
+  (** testops **)
+  | rs_testop_i32 :
+    forall c testop,
+    reduce_simple [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_testop T_i32 testop)] [::AI_basic (BI_const (VAL_int32 (wasm_bool (@app_testop_i i32t testop c))))]
+  | rs_testop_i64 :
+    forall c testop,
+    reduce_simple [::AI_basic (BI_const (VAL_int64 c)); AI_basic (BI_testop T_i64 testop)] [::AI_basic (BI_const (VAL_int32 (wasm_bool (@app_testop_i i64t testop c))))]
+
+  (** relops **)
+  | rs_relop: forall v1 v2 t op,
+    reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_relop t op)] [::AI_basic (BI_const (VAL_int32 (wasm_bool (app_relop op v1 v2))))]
+                    
+  (** convert and reinterpret **)
+  | rs_convert_success :
+    forall t1 t2 v v' sx,
+    types_agree t1 v ->
+    cvt t2 sx v = Some v' ->
+    reduce_simple [::AI_basic (BI_const v); AI_basic (BI_cvtop t2 CVO_convert t1 sx)] [::AI_basic (BI_const v')]
+  | rs_convert_failure :
+    forall t1 t2 v sx,
+    types_agree t1 v ->
+    cvt t2 sx v = None ->
+    reduce_simple [::AI_basic (BI_const v); AI_basic (BI_cvtop t2 CVO_convert t1 sx)] [::AI_trap]
+  | rs_reinterpret :
+    forall t1 t2 v,
+    types_agree t1 v ->
+    reduce_simple [::AI_basic (BI_const v); AI_basic (BI_cvtop t2 CVO_reinterpret t1 None)] [::AI_basic (BI_const (wasm_deserialise (bits v) t2))]
+
+  (** control-flow operations **)
+  | rs_unreachable :
+    reduce_simple [::AI_basic BI_unreachable] [::AI_trap]
+  | rs_nop :
+    reduce_simple [::AI_basic BI_nop] [::]
+  | rs_drop :
+    forall v,
+    reduce_simple [::AI_basic (BI_const v); AI_basic BI_drop] [::]
+  | rs_select_false :
+    forall n v1 v2,
+    n = Wasm_int.int_zero i32m ->
+    reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_const (VAL_int32 n)); AI_basic BI_select] [::AI_basic (BI_const v2)]
+  | rs_select_true :
+    forall n v1 v2,
+    n <> Wasm_int.int_zero i32m ->
+    reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_const (VAL_int32 n)); AI_basic BI_select] [::AI_basic (BI_const v1)]
+  | rs_block :
+      forall vs es n m t1s t2s,
+        const_list vs ->
+        length vs = n ->
+        length t1s = n ->
+        length t2s = m ->
+        reduce_simple (vs ++ [::AI_basic (BI_block (Tf t1s t2s) es)]) [::AI_label m [::] (vs ++ to_e_list es)]
+  | rs_loop :
+      forall vs es n m t1s t2s,
+        const_list vs ->
+        length vs = n ->
+        length t1s = n ->
+        length t2s = m ->
+        reduce_simple (vs ++ [::AI_basic (BI_loop (Tf t1s t2s) es)]) [::AI_label n [::AI_basic (BI_loop (Tf t1s t2s) es)] (vs ++ to_e_list es)]
+  | rs_if_false :
+      forall n tf e1s e2s,
+        n = Wasm_int.int_zero i32m ->
+        reduce_simple ([::AI_basic (BI_const (VAL_int32 n)); AI_basic (BI_if tf e1s e2s)]) [::AI_basic (BI_block tf e2s)]
+  | rs_if_true :
+      forall n tf e1s e2s,
+        n <> Wasm_int.int_zero i32m ->
+        reduce_simple ([::AI_basic (BI_const (VAL_int32 n)); AI_basic (BI_if tf e1s e2s)]) [::AI_basic (BI_block tf e1s)]
+  | rs_label_const :
+      forall n es vs,
+        const_list vs ->
+        reduce_simple [::AI_label n es vs] vs
+  | rs_label_trap :
+      forall n es,
+        reduce_simple [::AI_label n es [::AI_trap]] [::AI_trap]
+  | rs_br :
+      forall n vs es i LI lh,
+        const_list vs ->
+        length vs = n ->
+        lfilled i lh (vs ++ [::AI_basic (BI_br i)]) LI ->
+        reduce_simple [::AI_label n es LI] (vs ++ es)
+  | rs_br_if_false :
+      forall n i,
+        n = Wasm_int.int_zero i32m ->
+        reduce_simple [::AI_basic (BI_const (VAL_int32 n)); AI_basic (BI_br_if i)] [::]
+  | rs_br_if_true :
+      forall n i,
+        n <> Wasm_int.int_zero i32m ->
+        reduce_simple [::AI_basic (BI_const (VAL_int32 n)); AI_basic (BI_br_if i)] [::AI_basic (BI_br i)]
+  | rs_br_table : (* ??? *)
+      forall iss c i j,
+        length iss > Wasm_int.nat_of_uint i32m c ->
+        List.nth_error iss (Wasm_int.nat_of_uint i32m c) = Some j ->
+        reduce_simple [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_br_table iss i)] [::AI_basic (BI_br j)]
+  | rs_br_table_length :
+      forall iss c i,
+        length iss <= (Wasm_int.nat_of_uint i32m c) ->
+        reduce_simple [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_br_table iss i)] [::AI_basic (BI_br i)]
+  | rs_local_const :
+      forall es n f,
+        const_list es ->
+        length es = n ->
+        reduce_simple [::AI_local n f es] es
+  | rs_local_trap :
+      forall n f,
+        reduce_simple [::AI_local n f [::AI_trap]] [::AI_trap]
+  | rs_return : (* ??? *)
+      forall n i vs es lh f,
+        const_list vs ->
+        length vs = n ->
+        lfilled i lh (vs ++ [::AI_basic BI_return]) es ->
+        reduce_simple [::AI_local n f es] vs
+  | rs_tee_local :
+      forall i v,
+        is_const v ->
+        reduce_simple [::v; AI_basic (BI_tee_local i)] [::v; v; AI_basic (BI_set_local i)]
+  | rs_trap :
+      forall es lh,
+        es <> [::AI_trap] ->
+        lfilled 0 lh [::AI_trap] es ->
+        reduce_simple es [::AI_trap]
+.
 
 Inductive pure_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
@@ -104,12 +241,12 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   | pr_getfield:
     forall hs s locs id fname kvp hv,
       hs !! id = Some (Some (HV_record kvp)) ->
-      getvalue_kvp kvp fname = Some hv ->
+      lookup_kvp kvp fname = Some hv -> 
       pure_reduce hs s locs (HE_get_field id fname) hs s locs (HE_value hv)
   | pr_getfield_trap1:
     forall hs s locs id fname kvp,
       hs !! id = Some (Some (HV_record kvp)) ->
-      getvalue_kvp kvp fname = None ->
+      lookup_kvp kvp fname = None ->
       pure_reduce hs s locs (HE_get_field id fname) hs s locs (HE_value HV_trap)
   | pr_getfield_trap2:
     forall hs s locs id fname hv,
@@ -123,7 +260,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   (* function exprs *)
   | pr_new_host_func:
     forall hs s locs htf locsn e s' n,
-      s' = {|s_funcs := s.(s_funcs) ++ [::FC_func_host htf locsn e]; s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
+      s' = {|s_funcs := s.(s_funcs) ++ [::datatypes_iris.FC_func_host htf locsn e]; s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
       n = length s.(s_funcs) ->
       pure_reduce hs s locs (HE_new_host_func htf (N_of_nat locsn) e) hs s' locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx n))))
   | pr_call_wasm:
@@ -253,12 +390,13 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       g.(g_val) = v ->
       pure_reduce hs s locs (HE_wasm_global_get idg) hs s locs (HE_value (HV_wasm_value v))
   (* wasm module expr *)
-  | pr_compile:
+   (* TODO: add this back after specifying the concrete host *)
+ (* | pr_compile:
     forall hs s locs id mo hvl hbytes,
       hs !! id = Some (Some (HV_list hvl)) ->
       to_bytelist hvl = Some hbytes ->
       run_parse_module (map byte_of_compcert_byte hbytes) = Some mo -> (* Check: is this correct? *)
-      pure_reduce hs s locs (HE_compile id) hs s locs (HE_value (HV_module mo))
+      pure_reduce hs s locs (HE_compile id) hs s locs (HE_value (HV_module mo))*)
   (* TODO: replace the proxy *)
   | pr_instantiate:
     forall hs s locs idm idr mo r rec,
@@ -279,11 +417,11 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
     forall hs s locsf locs ids e vs tn,
       list_extra.those2 (map (fun id => hs !! id) ids) = Some vs ->
       pure_reduce hs s locsf (HE_host_frame tn locs (HE_seq (HE_return ids) e)) hs s locsf (HE_value (HV_list vs))
-   
+
 (* TODO: needs all the host_expr reduction steps: compile, instantiate, etc. *)
 (* TODO: needs restructuring to make sense *)
-with wasm_reduce : host_state -> store_record -> datatypes.frame -> list administrative_instruction ->
-                   host_state -> store_record -> datatypes.frame -> list administrative_instruction -> Prop :=
+with wasm_reduce : host_state -> store_record -> datatypes_iris.frame -> list administrative_instruction ->
+                   host_state -> store_record -> datatypes_iris.frame -> list administrative_instruction -> Prop :=
   | wr_simple :
       forall e e' s f hs,
         reduce_simple e e' ->
@@ -298,14 +436,14 @@ with wasm_reduce : host_state -> store_record -> datatypes.frame -> list adminis
       forall s f i a cl tf c hs,
         stab_addr s f (Wasm_int.nat_of_uint i32m c) = Some a ->
         s.(s_funcs) !! a = Some cl ->
-        cl_type cl = Some tf ->
+        cl_type cl = tf ->
         stypes s f.(f_inst) i = Some tf ->
         wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_invoke a]
   | wr_call_indirect_failure1 :
       forall s f i a cl tf c hs,
         stab_addr s f (Wasm_int.nat_of_uint i32m c) = Some a ->
         s.(s_funcs) !! a = Some cl ->
-        cl_type cl = Some tf ->
+        cl_type cl = tf ->
         stypes s f.(f_inst) i <> Some tf ->
         wasm_reduce hs s f [::AI_basic (BI_const (VAL_int32 c)); AI_basic (BI_call_indirect i)] hs s f [::AI_trap]
   | wr_call_indirect_failure2 :
@@ -341,7 +479,7 @@ with wasm_reduce : host_state -> store_record -> datatypes.frame -> list adminis
 
   | wr_host_step :
     (* TODO: check *)
-    forall hs s (f : datatypes.frame) ts vs e hs' s' vs' e',
+    forall hs s (f : datatypes_iris.frame) ts vs e hs' s' vs' e',
       pure_reduce hs s vs e hs' s' vs' e' ->
         wasm_reduce hs s f [::AI_host_frame ts vs e] hs' s' f [::AI_host_frame ts vs' e']
   | wr_host_return :
@@ -466,13 +604,13 @@ with wasm_reduce : host_state -> store_record -> datatypes.frame -> list adminis
       wasm_reduce hs s f0 [::AI_local n f es] hs' s' f0 [::AI_local n f' es']
 .
 
-Inductive head_reduce: state -> expr -> state -> expr -> Prop :=
+Inductive head_reduce: state -> iris_expr -> state -> iris_expr -> Prop :=
   | purer_headr:
     forall hs s locs e hs' s' locs' e',
       pure_reduce hs s locs e hs' s' locs' e' ->
       head_reduce (hs, s, locs) e (hs', s', locs') e'.
 
-Definition head_step (e : expr) (s : state) (os : list observation) (e' : expr) (s' : state) (es' : list expr) : Prop :=
+Definition head_step (e : iris_expr) (s : state) (os : list observation) (e' : iris_expr) (s' : state) (es' : list iris_expr) : Prop :=
   head_reduce s e s' e' /\
   os = nil /\
   es' = nil. (* ?? *)
@@ -486,3 +624,4 @@ Proof.
   inversion HR as [hs s locs e hs' s' locs' e' H]; subst.
   by inversion H.
 Qed.
+

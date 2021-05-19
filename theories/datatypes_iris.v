@@ -22,8 +22,8 @@ Unset Printing Implicit Defensive.
 (* TODO: Documentation. *)
 
 (* TODO: make these have structure; this will require monad-ifying the whole thing *)
-Definition host := unit.
-Definition host_state := unit.
+(*Definition host := unit.
+Definition host_state := unit.*)
 
 Definition depth := nat.
 
@@ -345,10 +345,6 @@ Inductive basic_instruction : Type := (* be *)
 
 (** * Functions and Store **)
 
-Section Host.
-
-Variable host_function : Type.
-
 Definition funcaddr := immediate (* TODO: should be funcidx *).
 Definition tableaddr := immediate (* TODO: should be tableidx *).
 Definition memaddr := immediate. (* TODO: should be memidx *)
@@ -532,84 +528,6 @@ Inductive extern_t : Type :=
 | ET_glob : global_type -> extern_t
 .
 
-(** * Administrative Instructions **)
-
-(** std-doc:
-WebAssembly code consists of sequences of instructions. Its computational model is based on a stack machine in that instructions manipulate values on an implicit operand stack, consuming (popping) argument values and producing or returning (pushing) result values.
-
-In addition to dynamic operands from the stack, some instructions also have static immediate arguments, typically indices or type annotations, which are part of the instruction itself.
-
-Some instructions are structured in that they bracket nested sequences of instructions.
-[https://webassembly.github.io/spec/core/syntax/instructions.html]
-
-In order to express the reduction of traps, calls, and control instructions,
-the syntax of instructions is extended to include the following administrative
-instructions:
-*)
-Inductive administrative_instruction : Type := (* e *)
-| AI_basic : basic_instruction -> administrative_instruction
-| AI_trap
-| AI_invoke : funcaddr -> administrative_instruction
-| AI_label : nat -> seq administrative_instruction -> seq administrative_instruction -> administrative_instruction
-| AI_local : nat -> frame -> seq administrative_instruction -> administrative_instruction
-.
-
-(** std-doc:
-A function instance is the runtime representation of a function. It effectively
-is a closure of the original function over the runtime module instance of its
-originating module. The module instance is used to resolve references to other
-definitions during execution of the function.
-*)
-Inductive function_closure : Type := (* cl *)
-  | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
-  | FC_func_host : function_type -> host_function -> function_closure
-.
-
-(** std-doc:
-The store represents all global state that can be manipulated by WebAssembly
-programs. It consists of the runtime representation of all instances of
-functions, tables, memories, and globals that have been allocated during the
-life time of the abstract machine
-*)
-Record store_record : Type := (* s *) {
-  s_funcs : list function_closure;
-  s_tables : list tableinst;
-  s_mems : list memory;
-  s_globals : list global;
-}.
-
-
-Inductive lholed : Type :=
-| LH_base : list administrative_instruction -> list administrative_instruction -> lholed
-| LH_rec : list administrative_instruction -> nat -> list administrative_instruction -> lholed -> list administrative_instruction -> lholed
-.
-
-
-(** Some types used in the interpreter. **)
-
-Definition config_tuple : Type := store_record * frame * seq administrative_instruction.
-
-Definition config_one_tuple_without_e : Type := store_record * frame * seq value.
-
-Inductive res_crash : Type :=
-  | C_error : res_crash
-  .
-
-Inductive res_step : Type :=
-  | RS_crash : res_crash -> res_step
-  | RS_break : nat -> seq value -> res_step
-  | RS_return : seq value -> res_step
-  | RS_normal : seq administrative_instruction -> res_step
-  .
-
-Definition res_tuple : Type := store_record * frame * res_step.
-
-End Host.
-  
-Arguments FC_func_native [host_function].
-
-Section Iris_Host.
-  
 Inductive wasm_object_type : Type :=
 | WOT_funcref : wasm_object_type
 | WOT_tableref : wasm_object_type
@@ -651,13 +569,28 @@ Inductive host_value : Type :=
 | HV_trap : host_value
 .
 
-Inductive iris_administrative_instruction : Type := (* e *)
-| IAI_basic : basic_instruction -> iris_administrative_instruction
-| IAI_trap
-| IAI_invoke : funcaddr -> iris_administrative_instruction
-| IAI_label : nat -> seq iris_administrative_instruction -> seq iris_administrative_instruction -> iris_administrative_instruction
-| IAI_local : nat -> frame -> seq iris_administrative_instruction -> iris_administrative_instruction
-| IAI_host_frame : list value_type (* TODO: is that right??? *) -> list host_value -> host_expr -> iris_administrative_instruction
+(** * Administrative Instructions **)
+
+(** std-doc:
+WebAssembly code consists of sequences of instructions. Its computational model is based on a stack machine in that instructions manipulate values on an implicit operand stack, consuming (popping) argument values and producing or returning (pushing) result values.
+
+In addition to dynamic operands from the stack, some instructions also have static immediate arguments, typically indices or type annotations, which are part of the instruction itself.
+
+Some instructions are structured in that they bracket nested sequences of instructions.
+[https://webassembly.github.io/spec/core/syntax/instructions.html]
+
+In order to express the reduction of traps, calls, and control instructions,
+the syntax of instructions is extended to include the following administrative
+instructions:
+ *)
+
+Inductive administrative_instruction : Type := (* e *)
+| AI_basic : basic_instruction -> administrative_instruction
+| AI_trap
+| AI_invoke : funcaddr -> administrative_instruction
+| AI_label : nat -> seq administrative_instruction -> seq administrative_instruction -> administrative_instruction
+| AI_local : nat -> frame -> seq administrative_instruction -> administrative_instruction
+| AI_host_frame : list value_type (* TODO: is that right??? *) -> list host_value -> host_expr -> administrative_instruction
 with host_expr : Type :=
 | HE_value : host_value -> host_expr
 | HE_getglobal : id -> host_expr
@@ -687,7 +620,55 @@ with host_expr : Type :=
 | HE_compile : id -> host_expr
 | HE_instantiate : id -> id -> host_expr
 | HE_host_frame : list value_type -> list host_value -> host_expr -> host_expr
-| HE_wasm_frame: list iris_administrative_instruction -> host_expr
+| HE_wasm_frame: list administrative_instruction -> host_expr
 .
 
-End Iris_Host.
+(** std-doc:
+A function instance is the runtime representation of a function. It effectively
+is a closure of the original function over the runtime module instance of its
+originating module. The module instance is used to resolve references to other
+definitions during execution of the function.
+*)
+Inductive function_closure : Type := (* cl *)
+  | FC_func_native : instance -> function_type -> list value_type -> list basic_instruction -> function_closure
+  | FC_func_host : function_type -> nat -> host_expr -> function_closure
+.
+
+(** std-doc:
+The store represents all global state that can be manipulated by WebAssembly
+programs. It consists of the runtime representation of all instances of
+functions, tables, memories, and globals that have been allocated during the
+life time of the abstract machine
+*)
+Record store_record : Type := (* s *) {
+  s_funcs : list function_closure;
+  s_tables : list tableinst;
+  s_mems : list memory;
+  s_globals : list global;
+}.
+
+
+Inductive lholed : Type :=
+| LH_base : list administrative_instruction -> list administrative_instruction -> lholed
+| LH_rec : list administrative_instruction -> nat -> list administrative_instruction -> lholed -> list administrative_instruction -> lholed
+.
+
+
+(** Some types used in the interpreter. **)
+
+Definition config_tuple : Type := store_record * frame * seq administrative_instruction.
+
+Definition config_one_tuple_without_e : Type := store_record * frame * seq value.
+
+Inductive res_crash : Type :=
+  | C_error : res_crash
+  .
+
+Inductive res_step : Type :=
+  | RS_crash : res_crash -> res_step
+  | RS_break : nat -> seq value -> res_step
+  | RS_return : seq value -> res_step
+  | RS_normal : seq administrative_instruction -> res_step
+  .
+
+Definition res_tuple : Type := store_record * frame * res_step.

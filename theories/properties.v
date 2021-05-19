@@ -10,6 +10,10 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
+Section Host.
+
+Variable host_function : eqType.
+  
 (** * Basic Lemmas **)
 
 Lemma const_list_concat: forall vs1 vs2,
@@ -400,6 +404,8 @@ Proof.
   move => X. induction l1 => //=.
 Qed.
 
+End Host.
+
 (** * Tactics **)
 
 (** [gen_ind] perform an induction over predicates like [be_typing], generalising its parameters,
@@ -561,6 +567,15 @@ Ltac fold_upd_context :=
 
 (** * More Advanced Lemmas **)
 
+Section Host.
+
+Variable host_function : eqType.
+
+Let store_record := store_record host_function.
+Let function_closure := function_closure host_function.
+Let e_typing : store_record -> t_context -> seq administrative_instruction -> function_type -> Prop :=
+  @e_typing _.
+
 Lemma lfilled_collapse1: forall n lh vs es LI l,
     lfilledInd n lh (vs++es) LI ->
     const_list vs ->
@@ -676,10 +691,10 @@ Definition lfilled_pickable_rec_gen_measure (LI : seq administrative_instruction
        (fun _ => 0) (** Invoke case **)
        (fun _ LI1 LI2 m1 m2 => 1 + TProp.max m2) (** Label case **)
        (fun _ _ LI' m => 0) (** Local case **)
-       (fun _ _ h =>
+   (*    (fun _ _ h =>
           (* There might be cases of the [HE_wasm_frame] case in which we might want to
            * continue the induction in the future, but this is not needed for now. *)
-          0) (** Host frame case **)
+          0) (** Host frame case **)*)
        LI).
 
 Lemma lfilled_pickable_rec_gen_measure_cons : forall I LI,
@@ -765,7 +780,9 @@ Proof.
   }
   case: (list_split_pickable2 (fun vs es => decidable_and (Dcl vs) (Dparse es)) es').
   - move=> [[vs es''] [E1 [C Ex]]].
-    destruct es'' as [| [| | |n es1 LI|ts' vs' h|] es2];
+    (* Commented out the items on Iris host for now. add them back when the host is concretely
+         introduced. *)
+    destruct es'' as [| [| | |n es1 LI|ts' vs' h(*|*)] es2];
       try solve [ exfalso; move: Ex => [? [? [? [? E']]]]; inversion E' ].
     clear Ex. rewrite E1.
     have I_LI: (lfilled_pickable_rec_gen_measure LI < m)%coq_nat.
@@ -1142,3 +1159,4 @@ Qed.
 
 End composition_typing_proofs.
 
+End Host.

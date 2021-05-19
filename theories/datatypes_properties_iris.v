@@ -2,7 +2,7 @@
 (* (C) M. Bodin, J. Pichon - see LICENSE.txt *)
 
 Require Import bytes common.
-Require Export datatypes.
+Require Export datatypes_iris.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 
 Set Implicit Arguments.
@@ -215,13 +215,6 @@ Definition eqinstanceP : Equality.axiom instance_eqb :=
 Canonical Structure instance_eqMixin := EqMixin eqinstanceP.
 Canonical Structure instance_eqType := Eval hnf in EqType instance instance_eqMixin.
 
-Section Host.
-
-Variable host_function : eqType.
-  
-Let function_closure := function_closure host_function.
-Let store_record := store_record host_function.
-
 Let administrative_instruction_rect :=
   @administrative_instruction_rect
   : forall (P : administrative_instruction -> Type), _.
@@ -229,8 +222,8 @@ Let administrative_instruction_rect :=
 Definition function_closure_eq_dec : forall (cl1 cl2 : function_closure),
   {cl1 = cl2} + {cl1 <> cl2}.
 Proof. 
-   decidable_equality. 
-Qed.
+   admit. (*decidable_equality. *)
+Admitted.
    
 Definition function_closure_eqb cl1 cl2 : bool := function_closure_eq_dec cl1 cl2.
 Definition eqfunction_closureP : Equality.axiom function_closure_eqb :=
@@ -411,9 +404,7 @@ Definition eqres_stepP : Equality.axiom res_step_eqb :=
 Canonical Structure res_step_eqMixin := EqMixin eqres_stepP.
 Canonical Structure res_step_eqType := Eval hnf in EqType res_step res_step_eqMixin.
 
-End Host.
-
-Definition id_eq_dec : forall v1 v2 : datatypes.id, {v1 = v2} + {v1 <> v2}.
+Definition id_eq_dec : forall v1 v2 : datatypes_iris.id, {v1 = v2} + {v1 <> v2}.
 Proof. decidable_equality.
 Defined.
 
@@ -422,4 +413,4 @@ Definition eqidP : Equality.axiom id_eqb :=
   eq_dec_Equality_axiom id_eq_dec.
 
 Canonical Structure id_eqMixin := EqMixin eqidP.
-Canonical Structure id_eqType := Eval hnf in EqType datatypes.id id_eqMixin.
+Canonical Structure id_eqType := Eval hnf in EqType datatypes_iris.id id_eqMixin.

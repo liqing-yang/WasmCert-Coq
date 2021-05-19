@@ -12,7 +12,7 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Require Import common operations datatypes datatypes_properties.
+Require Import common operations_iris datatypes_iris datatypes_properties_iris.
 
 From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
@@ -32,18 +32,19 @@ Qed.
 
 Canonical Structure wasm_lang := Language wasm_mixin.
 
-Global Instance Inhabited_wasm_state: Inhabited (language.state wasm_lang) := populate (∅, Build_store_record [::] [::] [::] [::], [::]).
+(*Global Instance Inhabited_wasm_state: Inhabited (language.state wasm_lang) :=
+  populate (∅, Build_store_record [::] [::] [::] [::], [::]).*)
 
 Definition proph_id := unit. (* ??? *)
 
 Class hsG Σ := HsG {
   hs_invG : invG Σ;
-  hs_gen_hsG :> gen_heapG id (option val) Σ
+  hs_gen_hsG :> gen_heapG id (option iris_val) Σ
 }.
 
 Class locG Σ := LocG {
   loc_invG : invG Σ;
-  loc_gen_hsG :> gen_heapG N (option val) Σ
+  loc_gen_hsG :> gen_heapG N (option iris_val) Σ
 }.
 
 Class wfuncG Σ := WFuncG {
