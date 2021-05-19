@@ -580,7 +580,7 @@ Proof.
   move=> es. match goal with |- is_true (_ <= TProp.max ?F) => set Fm := F end.
   rewrite -(Max.max_0_l (TProp.max Fm)). move: 0. induction es => n /=.
   - by lias.
-  - rewrite Max.max_assoc. by apply: IHes.
+  - rewrite maxn_nat_max Max.max_assoc. by apply: IHes.
 Qed.
 
 Local Lemma run_step_fuel_enough_aux : forall d hs s f es hs' s' f' r',
@@ -610,7 +610,7 @@ Proof.
         by destruct r'' as [|[|]| |] => //; pattern_match.
       * move: E. rewrite /interpreter_func.run_step_fuel HSplitVals.
         rewrite List.map_app List.fold_left_app => /=.
-        move=> E. have: (exists v, n = Nat.max (run_one_step_fuel e) v).
+        move=> E. have: exists v, n = Nat.max (run_one_step_fuel e) v.
         {
           move: E. clear. move: (List.fold_left _ _ 0). induction les' => /=.
           - move=> v E. exists v. by lias.

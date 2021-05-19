@@ -20,7 +20,7 @@ Definition expr := host_expr.
 Definition val := host_value.
 (* Use gmap to specify the host variable store instead. *)
 Definition host_state := gmap id (option val).
-Definition state : Type := host_state * store_record * (list host_value).
+Definition state : Type := host_state * store_record * list host_value.
 Definition observation := unit. (* TODO: ??? *)
 
 Definition of_val (v : val) : expr := HE_value v.
