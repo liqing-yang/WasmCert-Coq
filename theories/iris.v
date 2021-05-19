@@ -32,9 +32,6 @@ Qed.
 
 Canonical Structure wasm_lang := Language wasm_mixin.
 
-(*Global Instance Inhabited_wasm_state: Inhabited (language.state wasm_lang) :=
-  populate (∅, Build_store_record [::] [::] [::] [::], [::]).*)
-
 Definition proph_id := unit. (* ??? *)
 
 Class hsG Σ := HsG {
@@ -342,7 +339,7 @@ Qed.
      value to be set from a resource first. *)
 Lemma wp_setlocal s E n id w v:
   {{{ n ↦ₗ w ∗ id ↦ₕ v }}} (HE_setlocal n id) @ s; E
-  {{{ RET v; n ↦ₗ v }}}.
+  {{{ RET v; n ↦ₗ v ∗ id ↦ₕ v}}}.
 Proof.
   iIntros (Φ) "[Hl Hh] HΦ".
   iApply wp_lift_atomic_step => //.
@@ -376,7 +373,7 @@ Proof.
       simpl.
       rewrite gmap_of_list_insert => //.
       iSplitL "Hlocs" => //.
-      iSplit => //. by iApply "HΦ".
+      iSplit => //. iApply "HΦ". by iFrame.
     + by rewrite H11 in H.
     + symmetry in Hlookup_locs. apply lookup_lt_Some in Hlookup_locs.
       lia.
@@ -388,11 +385,13 @@ Proof.
   move => id e1 e2 [[hs ws] locs].
   apply hs_red_equiv.
   destruct (hs !! id) as [ores|] eqn:Hlookup; try destruct ores as [res|].
-  - destruct (decide (res = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)))); subst; repeat eexists.
-    + by eapply pr_if_false.
-    + by eapply pr_if_true.
-  - repeat eexists. by eapply pr_if_false_none.
-  - repeat eexists. by eapply pr_if_trap.
+  - destruct (decide (res = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)))); subst.
+    + repeat eexists; by eapply pr_if_false.
+    + destruct (decide (res = HV_trap)); subst; repeat eexists.
+      * by eapply pr_if_trap.
+      * by eapply pr_if_true.
+  - repeat eexists. by eapply pr_if_some_none.
+  - repeat eexists. by eapply pr_if_none.
 Qed.
 
 (*
@@ -418,11 +417,48 @@ End IrisNew.
      example, the following version, albeit sensible, does not seem to be provable at 
      the moment. *)
 (* UPD: THIS IS PROVED!!!! *)
-(* TODO: ADD DETAILED COMMENTS ON HOW TO RESOLVING FUPD, AND EXPLAIN WHY IT IS HARDER TO DO IT
+(* TODO: ADD DETAILED COMMENTS ON HOW TO RESOLVE FUPD, AND EXPLAIN WHY IT IS HARDER TO DO IT
            IN IRIS 3.3 *)
 Lemma wp_if_true s E id v w e1 e2 P Q:
   v <> HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
+  v <> HV_trap ->
   {{{ P ∗ id ↦ₕ v }}} e1 @ s; E {{{ RET w; Q }}} ⊢
+  {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
+  {{{ RET w; Q }}}.
+Proof.
+  move => HNzero HNTrap.
+  iIntros "#HT".
+  iModIntro.
+  iIntros (Φ) "[HP Hh] HΦ".
+  iApply wp_lift_step => //.
+  iIntros (σ1 κ κs n) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs Ho]".
+  iDestruct (gen_heap_valid with "Hhs Hh") as %?.
+  (* I really wish we're using the new version of Iris, where we can just apply one of the new
+       fupd intro lemmas to get this fupd into a premise. But we don't have that currently. *)
+  (* UPD: After some treasure hunting, this is also doable via an iMod! *)
+  (* TODO: add comments on resolving this fupd modality. Old version: only do iMod fupd_intro_mask'. New version: either iMod fupd_intro_subseteq or iApply fupd_mask_intro. *)
+  (* TODO: update to the current version of Iris -- which involves upgrading Coq to 8.12? *)
+  iMod (fupd_intro_mask' E ∅) as "Hfupd"; first by set_solver.
+  iModIntro.
+  iSplit.
+  - iPureIntro. destruct s => //.
+    by apply he_if_reducible.
+  - iModIntro.
+    iIntros (e0 σ2 efs HStep).
+    inv_head_step.
+    + iMod "Hfupd".
+      iModIntro.
+      iFrame.
+      iApply ("HT" with "[HP Hh]") => //; by iFrame.
+    + by rewrite H in H12.
+Qed.
+
+Lemma wp_if_false s E id v w e1 e2 P Q:
+  v = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
+  {{{ P ∗ id ↦ₕ v }}} e2 @ s; E {{{ RET w; Q }}} ⊢
   {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
   {{{ RET w; Q }}}.
 Proof.
@@ -455,5 +491,5 @@ Proof.
       iApply ("HT" with "[HP Hh]") => //; first by iFrame.
     + by rewrite H in H12.
 Qed.
- 
+
 End lifting.

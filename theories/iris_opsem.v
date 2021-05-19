@@ -211,17 +211,23 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
     forall hs s locs id e1 e2 hv,
       hs !! id = Some (Some hv) ->
       hv <> HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
+      hv ≠ HV_trap ->
       pure_reduce hs s locs (HE_if id e1 e2) hs s locs e1
   | pr_if_false: 
     forall hs s locs id e1 e2 hv,
       hs !! id = Some (Some hv) ->
       hv = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
       pure_reduce hs s locs (HE_if id e1 e2) hs s locs e2
-  | pr_if_false_none: 
+  | pr_if_trap: 
+    forall hs s locs id e1 e2 hv,
+      hs !! id = Some (Some hv) ->
+      hv = HV_trap ->
+      pure_reduce hs s locs (HE_if id e1 e2) hs s locs (HE_value HV_trap)
+  | pr_if_some_none: 
     forall hs s locs id e1 e2,
       hs !! id = Some None ->
       pure_reduce hs s locs (HE_if id e1 e2) hs s locs e2
-  | pr_if_trap: 
+  | pr_if_none: 
     forall hs s locs id e1 e2,
       hs !! id = None ->
       pure_reduce hs s locs (HE_if id e1 e2) hs s locs (HE_value HV_trap)
