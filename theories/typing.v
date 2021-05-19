@@ -457,9 +457,10 @@ Proof.
   by move: H1 => [H1].
 Qed.
 
-(*
-Print Func_native.
+(* FIXME: Added so that it could compile, but I’m not sure of the implications there. *)
+Definition host_function_type_to_wasm (t : function_type) := Some t.
 
+(*
   Here we're typing a function closure. The second case where we have a host function
     is obvious: it can be anything.
   However, if it is a native function, then we should be able to deduce its type.

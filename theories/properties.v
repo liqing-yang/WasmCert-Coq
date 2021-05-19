@@ -1,7 +1,7 @@
 (** Miscellaneous properties about Wasm operations **)
 (* (C) Rao Xiaojia, M. Bodin - see LICENSE.txt *)
 
-From Wasm Require Export operations typing opsem common.
+From Wasm Require Export datatypes_properties operations typing opsem common.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From StrongInduction Require Import StrongInduction.
 From Coq Require Import Bool Program.Equality.
@@ -33,7 +33,23 @@ Proof.
   split => //.
   by apply/andP.
 Qed.    
-    
+
+(** This lemma justifies the computation “to the first non-[const_list]”. **)
+Lemma const_list_concat_inv : forall vs1 vs2 e1 e2 es1 es2,
+  const_list vs1 ->
+  const_list vs2 ->
+  ~ is_const e1 ->
+  ~ is_const e2 ->
+  vs1 ++ e1 :: es1 = vs2 ++ e2 :: es2 ->
+  vs1 = vs2 /\ e1 = e2 /\ es1 = es2.
+Proof.
+  induction vs1 => vs2 e1 e2 es1 es2 C1 C2 N1 N2; destruct vs2 => /=; inversion 1; subst;
+    try move: C1 => /= /andP [? ?] //;
+    try move: C2 => /= /andP [? ?] //.
+  - done.
+  - apply IHvs1 in H2 => //. move: H2 => [? [? ?]]. by subst.
+Qed.
+
 Lemma const_list_take: forall vs l,
     const_list vs ->
     const_list (take l vs).
@@ -57,20 +73,16 @@ Proof.
   - move => a l IH vs2. by rewrite IH.
 Qed.
 
-(* TODO: Check with Martin for split_vals *)
 Lemma split_vals_e_v_to_e_duality: forall es vs es',
     split_vals_e es = (vs, es') ->
     es = (v_to_e_list vs) ++ es'.
 Proof.
   move => es vs. move: es. elim: vs => //.
-  - unfold split_vals_e. destruct es => //=.
-    + move => es' H. by inversion H.
-    + move => es'.
-      case a; try by inversion 1; [idtac].
+  - move=> es es'. destruct es => //=.
+    + by inversion 1.
+    + case a; try by inversion 1; [idtac].
       move => b. case b; try by inversion 1.
-      (* ask *)
-      fold split_vals_e. move => v H.
-      by destruct (split_vals_e es).
+      move => v H.  by destruct (split_vals_e es).
   - move => a l H es es' HSplit. unfold split_vals_e in HSplit.
     destruct es => //. destruct a0 => //. destruct b => //.
     fold split_vals_e in HSplit.
@@ -655,16 +667,61 @@ Proof.
 Qed.
 
 
+(** The decreasing measure used in the definition of [lfilled_pickable_rec_gen]. **)
+Definition lfilled_pickable_rec_gen_measure (LI : seq administrative_instruction) :=
+  TProp.max
+    (seq_administrative_instruction_rect'
+       (fun _ => 0) (** Basic case **)
+       0 (** Trap case **)
+       (fun _ => 0) (** Invoke case **)
+       (fun _ LI1 LI2 m1 m2 => 1 + TProp.max m2) (** Label case **)
+       (fun _ _ LI' m => 0) (** Local case **)
+       (fun _ _ h =>
+          (* There might be cases of the [HE_wasm_frame] case in which we might want to
+           * continue the induction in the future, but this is not needed for now. *)
+          0) (** Host frame case **)
+       LI).
+
+Lemma lfilled_pickable_rec_gen_measure_cons : forall I LI,
+  lfilled_pickable_rec_gen_measure LI <= lfilled_pickable_rec_gen_measure (I :: LI).
+Proof.
+  move=> I LI. by apply: leq_maxr.
+Qed.
+
+Lemma lfilled_pickable_rec_gen_measure_concat_l : forall LI1 LI2,
+  lfilled_pickable_rec_gen_measure LI1 <= lfilled_pickable_rec_gen_measure (LI1 ++ LI2).
+Proof.
+  move => LI1 LI2. induction LI1 => /=.
+  - rewrite {1} /lfilled_pickable_rec_gen_measure /=. by lias.
+  - rewrite /lfilled_pickable_rec_gen_measure /=.
+    by apply: maxn_congruence_r.
+Qed.
+
+Lemma lfilled_pickable_rec_gen_measure_concat_r : forall LI1 LI2,
+  lfilled_pickable_rec_gen_measure LI2 <= lfilled_pickable_rec_gen_measure (LI1 ++ LI2).
+Proof.
+  move => LI1 LI2. induction LI1 => /=.
+  - rewrite {1} /lfilled_pickable_rec_gen_measure /=. by lias.
+  - rewrite /lfilled_pickable_rec_gen_measure /=. eapply leq_trans; first by apply: IHLI1.
+    by apply: leq_maxr.
+Qed.
+
+Lemma lfilled_pickable_rec_gen_measure_label_r : forall n es LI LI',
+  lfilled_pickable_rec_gen_measure LI < lfilled_pickable_rec_gen_measure (AI_label n es LI :: LI').
+Proof.
+  move=> n es LI LI'. rewrite /lfilled_pickable_rec_gen_measure /=. by apply: leq_maxl.
+Qed.
+
 (** A helper definition for [lfilled_decidable_rec]. **)
-Definition lfilled_pickable_rec_gen : forall fes,
-  (forall es' lh n0, decidable (lfilled 0 lh (fes n0 lh) es')) ->
-  forall es', pickable2 (fun n lh => lfilled n lh (fes n lh) es').
+Definition lfilledInd_pickable_rec_gen : forall fes,
+  (forall es' lh lh' n0, decidable (lfilledInd 0 lh (fes n0 lh') es')) ->
+  forall es', pickable2 (fun n lh => lfilledInd n lh (fes n lh) es').
 Proof.
   move=> fes D0 es'.
-  apply: (@pickable2_equiv _ _ (fun n lh => lfilledInd n lh (fes (0+n) lh) es')).
-  { move=> n lh. by split; apply lfilled_Ind_Equivalent. }
-  move: 0 => k. have [len E]: { len | size es' = len }; first by eexists.
-  move: es' E k. strong induction len. rename X into IH. move=> es' E k.
+  apply: (@pickable2_equiv _ _ (fun n lh => lfilledInd n lh (fes (0+n) lh) es')); first by [].
+  move: 0 => k.
+  have [m E]: { m | lfilled_pickable_rec_gen_measure es' = m }; first by eexists.
+  move: fes D0 es' E k. strong induction m. rename X into IH. move=> fes D0 es' E k.
   have Dcl: forall vs, decidable (const_list vs).
   { move=> vs. by apply: is_true_decidable. }
   (** First, we check whether we can set [n = 0]. **)
@@ -679,9 +736,7 @@ Proof.
     {
       apply: list_split_pickable3_gen. move=> vs es es'' Ees /=.
       case E': (es == fes k (LH_base vs es'')); move/eqP: E' => E'.
-      - rewrite E'. repeat apply: decidable_and => //.
-        + by apply: eq_comparable.
-        + by apply: decidable_equiv; first by apply: lfilled_Ind_Equivalent.
+      - rewrite E'. repeat apply: decidable_and => //. by apply: eq_comparable.
       - right. by move=> [Ees2 [Cl I]].
     }
     case.
@@ -710,16 +765,44 @@ Proof.
   }
   case: (list_split_pickable2 (fun vs es => decidable_and (Dcl vs) (Dparse es)) es').
   - move=> [[vs es''] [E1 [C Ex]]].
-    (*destruct es'' as [| [| | | n es1 LI |] es2];
+    destruct es'' as [| [| | |n es1 LI|ts' vs' h|] es2];
       try solve [ exfalso; move: Ex => [? [? [? [? E']]]]; inversion E' ].
-    clear Ex.*)
-    (* apply: IH. *)
-    admit. (* TODO: the decreasing argument is not [size es'], but the size plus the sum of all the inner [LI]. *)
+    clear Ex. rewrite E1.
+    have I_LI: (lfilled_pickable_rec_gen_measure LI < m)%coq_nat.
+    {
+      rewrite -E E1. apply/leP. eapply leq_trans.
+      - by eapply lfilled_pickable_rec_gen_measure_label_r.
+      - by apply: lfilled_pickable_rec_gen_measure_concat_r.
+    }
+    set fes' := fun k lh => fes (k + 1) (LH_rec vs n es1 lh es2).
+    have D1: forall es' lh lh' n0, decidable (lfilledInd 0 lh (fes' n0 lh') es').
+    { move=> ? ? ? ?. by apply: D0. }
+    move: (IH _ I_LI fes' D1 LI (erefl _) k) => [[[n' lh] LF]|NP].
+    - eapply LfilledRec with (vs := vs) in LF => //.
+      left. exists (n'.+1, LH_rec vs n es1 lh es2).
+      move: LF. rewrite /fes'. rewrite_by (k + n' + 1 = k + n'.+1) => /= LF. by apply: LF.
+    - right. move=> [n' [lh FI]]. apply: NP. inversion FI; subst.
+      + exfalso. apply: nE. exists vs0. exists es'0. repeat split => //.
+        * rewrite -H. by rewrite_by (k + 0 = k).
+        * by rewrite_by (k = k + 0).
+      + apply const_list_concat_inv in H => //. move: H => [? [E ?]]. inversion E; subst.
+        exists k0. eexists. rewrite /fes'. rewrite_by (k + k0 + 1 = k + k0.+1). by apply: H4.
   - move=> nE'. right. move=> [n [lh I]]. inversion I; subst.
     + apply: nE. do 2 eexists. rewrite_by (k + 0 = k). repeat split; try eassumption.
       by apply: LfilledBase.
     + apply: nE'. by repeat eexists.
-Admitted (* TODO *).
+Defined.
+
+Definition lfilled_pickable_rec_gen : forall fes,
+  (forall es' lh lh' n0, decidable (lfilled 0 lh (fes n0 lh') es')) ->
+  forall es', pickable2 (fun n lh => lfilled n lh (fes n lh) es').
+Proof.
+  move=> fes D0 es'.
+  apply: (@pickable2_equiv _ _ (fun n lh => lfilledInd n lh (fes (0+n) lh) es')).
+  { move=> n lh. by split; apply lfilled_Ind_Equivalent. }
+  apply: lfilledInd_pickable_rec_gen => es'' lh lh' n0.
+  by apply: decidable_equiv; first by apply: lfilled_Ind_Equivalent.
+Defined.
 
 (** We can always decide [lfilled 0]. **)
 Lemma lfilled_decidable_base : forall es es' lh,
