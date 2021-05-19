@@ -15,7 +15,6 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 
 Unset Printing Implicit Defensive.
-(*
 Section Host.
 
 Local Notation "x <- m1 ; m2" :=
@@ -618,4 +617,3 @@ Definition itree_to_option (E : Type -> Type) (tr : forall T A, E T -> A) :
     forall R, itree E R -> option R :=
   fun _ tree => option_of_itree_void (translate (fun T => tr T _) tree).
 End Interpreter.
-*)

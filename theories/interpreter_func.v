@@ -4,7 +4,7 @@
 From Wasm Require Import common.
 From Coq Require Import ZArith.BinInt.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
-From Wasm Require Export operations type_checker.
+From Wasm Require Export operations host type_checker.
 Require Import BinNat.
 
 Set Implicit Arguments.
@@ -38,7 +38,7 @@ Definition eqresP : Equality.axiom res_eqb :=
 
 Canonical Structure res_eqMixin := EqMixin eqresP.
 Canonical Structure res_eqType := Eval hnf in EqType res res_eqMixin.
-(*
+
 Section Host_func.
 
 Variable host_function : eqType.
@@ -521,4 +521,4 @@ Fixpoint run_v (fuel : fuel) (d : depth) (cfg : config_tuple) : ((host_state * s
   end.
 
 End Host_func.
- *)
+
