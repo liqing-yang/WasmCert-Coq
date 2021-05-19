@@ -381,21 +381,23 @@ Proof.
       lia.
 Qed.
 
-Print host_expr.
-
-Print HE_if.
-
-Print reducible.
-
 Lemma he_if_reducible: forall id e1 e2 σ,
   @reducible wasm_lang (HE_if id e1 e2) σ.
 Proof.
-Admitted.
+  move => id e1 e2 [[hs ws] locs].
+  apply hs_red_equiv.
+  destruct (hs !! id) as [ores|] eqn:Hlookup; try destruct ores as [res|].
+  - destruct (decide (res = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)))); subst; repeat eexists.
+    + by eapply pr_if_false.
+    + by eapply pr_if_true.
+  - repeat eexists. by eapply pr_if_false_none.
+  - repeat eexists. by eapply pr_if_trap.
+Qed.
 
+(*
 Section IrisNew.
 
 Context `{BiFUpd PROP}.
-(*
 (* This is a proved lemma in the current newest Iris, but not Iris 3.3. *)
 (* Actually neither the lemma it relies on is in Iris 3.3, so we resort to another method to 
      introduce the fupd modality. *)
@@ -404,9 +406,10 @@ Lemma fupd_mask_intro E1 E2 (P: PROP) {HAbs: Absorbing P}:
   ((|={E2,E1}=> emp) -∗ P) -∗ |={E1,E2}=> P.
 Proof.
   intros. etrans; [|by apply fupd_mask_weaken]. by rewrite -fupd_intro.
-Qed.*)
+Qed.
 
 End IrisNew.
+ *)
 
 (* We now get to some control flow instructions. It's a bit tricky since rules like these
      do not need to be explicitly dealt with in Heaplang, but instead taken automatically by 
