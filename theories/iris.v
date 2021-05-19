@@ -392,17 +392,30 @@ Lemma he_if_reducible: forall id e1 e2 σ,
 Proof.
 Admitted.
 
-Lemma wp_value_imp s E v w P Q:
-  {{{ P }}} (HE_value v) @ s; E {{{ RET w; Q }}} ⊢
-  (⌜ v = w ⌝ ∗ (P -∗ Q))%I.
+Section IrisNew.
+
+Context `{BiFUpd PROP}.
+(*
+(* This is a proved lemma in the current newest Iris, but not Iris 3.3. *)
+(* Actually neither the lemma it relies on is in Iris 3.3, so we resort to another method to 
+     introduce the fupd modality. *)
+Lemma fupd_mask_intro E1 E2 (P: PROP) {HAbs: Absorbing P}:
+  E2 ⊆ E1 →
+  ((|={E2,E1}=> emp) -∗ P) -∗ |={E1,E2}=> P.
 Proof.
-Admitted.
+  intros. etrans; [|by apply fupd_mask_weaken]. by rewrite -fupd_intro.
+Qed.*)
+
+End IrisNew.
 
 (* We now get to some control flow instructions. It's a bit tricky since rules like these
      do not need to be explicitly dealt with in Heaplang, but instead taken automatically by 
      defining it as an evaluation context. We have to see what needs to be done here. For 
      example, the following version, albeit sensible, does not seem to be provable at 
      the moment. *)
+(* UPD: THIS IS PROVED!!!! *)
+(* TODO: ADD DETAILED COMMENTS ON HOW TO RESOLVING FUPD, AND EXPLAIN WHY IT IS HARDER TO DO IT
+           IN IRIS 3.3 *)
 Lemma wp_if_true s E id v w e1 e2 P Q:
   v <> HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
   {{{ P ∗ id ↦ₕ v }}} e1 @ s; E {{{ RET w; Q }}} ⊢
@@ -413,20 +426,30 @@ Proof.
   iIntros "#HT".
   iModIntro.
   iIntros (Φ) "[HP Hh] HΦ".
-  iApply wp_lift_pure_step_no_fork.
-  - move => σ1.
-    destruct s => //.
+  iApply wp_lift_step => //.
+  iIntros (σ1 κ κs n) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  simpl in *.
+  iDestruct "Hσ" as "[Hhs Ho]".
+  iDestruct (gen_heap_valid with "Hhs Hh") as %?.
+  (* I really wish we're using the new version of Iris, where we can just apply one of the new
+       fupd intro lemmas to get this fupd into a premise. But we don't have that currently. *)
+  (* UPD: After some treasure hunting, this is also doable via an iMod! *)
+  (* TODO: add comments on resolving this fupd modality. Old version: only do iMod fupd_intro_mask'. New version: either iMod fupd_intro_subseteq or iApply fupd_mask_intro. *)
+  (* TODO: update to the current version of Iris -- which involves upgrading Coq to 8.12? *)
+  iMod (fupd_intro_mask' E ∅) as "Hfupd"; first by set_solver.
+  iModIntro.
+  iSplit.
+  - iPureIntro. destruct s => //.
     by apply he_if_reducible.
-  - intros. by inv_head_step.
-  - iApply fupd_intro => //.
-    repeat iModIntro.
-    iIntros (κ e0 efs σ) "%".
-    destruct σ as [[hs ws] locs].
+  - iModIntro.
+    iIntros (e0 σ2 efs HStep).
     inv_head_step.
-    + iApply ("HT" with "[$]").
-      by iModIntro.
-    + admit.
-    + admit.
+    + iMod "Hfupd".
+      iModIntro.
+      iFrame.
+      iApply ("HT" with "[HP Hh]") => //; first by iFrame.
+    + by rewrite H in H12.
 Qed.
  
 End lifting.
