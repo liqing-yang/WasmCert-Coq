@@ -56,7 +56,7 @@ Class wtabG Σ := WTabG {
 
 Class wmemG Σ := WMemG {
   mem_invG : invG Σ;
-  mem_gen_hsG :> gen_heapG N (option memory) Σ;
+  mem_gen_hsG :> gen_heapG (N*N) (option byte) Σ;
 }.
 
 Class wglobG Σ := WGlobG {
@@ -65,7 +65,7 @@ Class wglobG Σ := WGlobG {
 }.
 
 Instance heapG_irisG `{hsG Σ, locG Σ, wfuncG Σ, wtabG Σ, wmemG Σ, wglobG Σ} : irisG wasm_lang Σ := {
-  iris_invG := hs_invG; (* TODO: determine the correct invariant *)
+  iris_invG := hs_invG; (* TODO: determine the correct invariant. Or, do we have any actually? *)
   state_interp σ κs _ :=
     let (hss, locs) := σ in
     let (hs, s) := hss in
@@ -73,8 +73,7 @@ Instance heapG_irisG `{hsG Σ, locG Σ, wfuncG Σ, wtabG Σ, wmemG Σ, wglobG Σ
       (gen_heap_ctx (gmap_of_list locs)) ∗
       (gen_heap_ctx (gmap_of_list s.(s_funcs))) ∗
       (gen_heap_ctx (gmap_of_list s.(s_tables))) ∗
-      (gen_heap_ctx (gmap_of_list s.(s_mems))) ∗ (* TODO: change this to some implementation like
-arrays *)
+      (gen_heap_ctx (gmap_of_mem s.(s_mems))) ∗
       (gen_heap_ctx (gmap_of_list s.(s_globals)))
     )%I;
   fork_post _ := True%I;
@@ -92,7 +91,10 @@ Notation "n ↦ₗ{ q } v" := (mapsto (L:=N) (V:=option host_value) n q (Some v%
 Notation "n ↦ₗ v" := (mapsto (L:=N) (V:=option host_value) n 1 (Some v%V))
                       (at level 20, format "n ↦ₗ v") : bi_scope.
 (* Unfortunately Unicode does not have every letter in the subscript small latin charset, so we 
-     will have to fall back on indices for now. *)
+     will have to fall back on indices for now. It's best to use subscripts with 2 letters such
+     as wf/wt/wm/wg, but immediately we realize we don't have w in the character set. A 
+     workaround is to use some pretty printing macro option in emacs, but that will not be 
+     displayed when viewed on github etc. *)
 Notation "n ↦₁{ q } v" := (mapsto (L:=N) (V:=option function_closure) n q (Some v%V))
                            (at level 20, q at level 5, format "n ↦₁{ q } v") : bi_scope.
 Notation "n ↦₁ v" := (mapsto (L:=N) (V:=option function_closure) n 1 (Some v%V))
@@ -101,14 +103,16 @@ Notation "n ↦₂{ q } v" := (mapsto (L:=N) (V:=option tableinst) n q (Some v%V
                            (at level 20, q at level 5, format "n ↦₂{ q } v") : bi_scope.
 Notation "n ↦₂ v" := (mapsto (L:=N) (V:=option tableinst) n 1 (Some v%V))
                       (at level 20, format "n ↦₂ v") : bi_scope.
-Notation "n ↦₃{ q } v" := (mapsto (L:=N) (V:=option memory) n q (Some v%V))
-                           (at level 20, q at level 5, format "n ↦₃{ q } v") : bi_scope.
-Notation "n ↦₃ v" := (mapsto (L:=N) (V:=option memory) n 1 (Some v%V))
-                      (at level 20, format "n ↦₃ v") : bi_scope.
+Notation "n [ i ] ↦₃{ q } v" := (mapsto (L:=N*N) (V:=option byte) (n, i) q (Some v%V))
+                           (at level 20, q at level 5, format "n [ i ] ↦₃{ q } v") : bi_scope.
+Notation "n [ i ] ↦₃ v" := (mapsto (L:=N*N) (V:=option byte) (n, i) 1 (Some v%V))
+                           (at level 20, format "n [ i ] ↦₃ v") : bi_scope.
 Notation "n ↦₄{ q } v" := (mapsto (L:=N) (V:=option global) n q (Some v%V))
                            (at level 20, q at level 5, format "n  ↦₄{ q } v") : bi_scope.
 Notation "n ↦₄ v" := (mapsto (L:=N) (V:=option global) n 1 (Some v%V))
                       (at level 20, format "n ↦₄ v") : bi_scope.
+
+Let wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
 
 Section lifting.
 
@@ -420,7 +424,7 @@ End IrisNew.
 (* TODO: ADD DETAILED COMMENTS ON HOW TO RESOLVE FUPD, AND EXPLAIN WHY IT IS HARDER TO DO IT
            IN IRIS 3.3 *)
 Lemma wp_if_true s E id v w e1 e2 P Q:
-  v <> HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
+  v <> wasm_zero->
   v <> HV_trap ->
   {{{ P ∗ id ↦ₕ v }}} e1 @ s; E {{{ RET w; Q }}} ⊢
   {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
@@ -457,7 +461,7 @@ Proof.
 Qed.
 
 Lemma wp_if_false s E id v w e1 e2 P Q:
-  v = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)) ->
+  v = wasm_zero ->
   {{{ P ∗ id ↦ₕ v }}} e2 @ s; E {{{ RET w; Q }}} ⊢
   {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
   {{{ RET w; Q }}}.
@@ -492,4 +496,5 @@ Proof.
     + by rewrite H in H12.
 Qed.
 
+  
 End lifting.

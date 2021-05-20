@@ -8,7 +8,7 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Require Import common operations datatypes datatypes_properties opsem interpreter binary_format_parser iris_base.
+Require Import common operations_iris datatypes_iris datatypes_properties_iris iris_base.
 From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
 From iris.algebra Require Import auth.
@@ -73,13 +73,42 @@ Proof.
     simpl in Heq. apply HInj1 in Heq. lia.
 Qed.
     
+Definition lookup_2d {T: Type} (l: list (list T)) (n: nat) (i: nat) : option T :=
+  match (l !! n) with
+  | Some x => x !! i
+  | None => None
+  end.
+
+Definition flatten_list_option {T: Type} (l: list T) : list (N * option T) :=
+  imap (fun n x => (N.of_nat n, Some x)) l.
+
 Definition gmap_of_list {T: Type} (l: list T) : gmap N (option T) :=
-  list_to_map (imap (fun n x => (N.of_nat n, Some x)) l).
+  list_to_map (flatten_list_option l).
+
+Fixpoint flatten_2d_list_i {T: Type} (l: list (list T)) (i: N) : list ((N*N) * option T) :=
+  match l with
+  | [::] => [::]
+  | l1 :: l' =>
+    let lf := flatten_list_option l1 in
+    (fmap (fun x => match x with | (n, b) => ((i, n), b) end) lf) ++ (flatten_2d_list_i l' (i+1))
+  end.
+
+Definition flatten_2d_list {T: Type} (l: list (list T)) : list ((N*N) * option T) :=
+  flatten_2d_list_i l 0.
+
+Definition gmap_of_list_2d {T: Type} (l: list (list T)) : gmap (N*N) (option T) :=
+  list_to_map (flatten_2d_list l).
+
+Definition memory_to_list (m: memory) : list byte :=
+  (m.(mem_data)).(memory_list.ml_data).
+
+Definition gmap_of_mem (l: list memory) : gmap (N*N) (option byte) :=
+  gmap_of_list_2d (fmap memory_to_list l).
 
 Lemma gmap_of_list_lookup {T: Type} (l: list T) n:
   (gmap_of_list l) !! n = option_map (fun x => Some x) (l !! (N.to_nat n)).
 Proof with resolve_finmap.
-  unfold gmap_of_list, option_map.
+  unfold gmap_of_list, flatten_list_option, option_map.
   remember_lookup.
   destruct lookup_res...
   - rewrite Nat2N.id. by rewrite Helem.
