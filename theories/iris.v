@@ -344,9 +344,9 @@ Qed.
 
 (* This is now very interesting and a bit different to setglobal, since we need to retrieve the
      value to be set from a resource first. *)
-Lemma wp_setlocal s E n id w v:
-  {{{ n ↦ₗ w ∗ id ↦ₕ v }}} (HE_setlocal n id) @ s; E
-  {{{ RET v; n ↦ₗ v ∗ id ↦ₕ v}}}.
+Lemma wp_setlocal s E n q id w v:
+  {{{ n ↦ₗ w ∗ id ↦ₕ{ q } v }}} (HE_setlocal n id) @ s; E
+  {{{ RET v; n ↦ₗ v ∗ id ↦ₕ{ q } v}}}.
 Proof.
   iIntros (Φ) "[Hl Hh] HΦ".
   iApply wp_lift_atomic_step => //.
@@ -424,11 +424,11 @@ End IrisNew.
      example, the following version, albeit sensible, does not seem to be provable at 
      the moment. *)
 (* TODO: Add detailed comments on how to resolve fupd in both iris 3.3 and new iris *)
-Lemma wp_if s E id v w e1 e2 P Q:
+Lemma wp_if s E id q v w e1 e2 P Q:
   v ≠ HV_trap ->
-  {{{ P ∗ id ↦ₕ v ∗ ⌜ v ≠ wasm_zero ⌝ }}} e1 @ s; E {{{ RET w; Q }}} ∗
-  {{{ P ∗ id ↦ₕ v ∗ ⌜ v = wasm_zero ⌝ }}} e2 @ s; E {{{ RET w; Q }}} ⊢
-  {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
+  {{{ P ∗ id ↦ₕ{ q } v ∗ ⌜ v ≠ wasm_zero ⌝ }}} e1 @ s; E {{{ RET w; Q }}} ∗
+  {{{ P ∗ id ↦ₕ{ q } v ∗ ⌜ v = wasm_zero ⌝ }}} e2 @ s; E {{{ RET w; Q }}} ⊢
+  {{{ P ∗ id ↦ₕ{ q } v }}} (HE_if id e1 e2) @ s; E
   {{{ RET w; Q }}}.
 Proof.
   move => HNTrap.
@@ -474,11 +474,11 @@ Qed.
 
 (* a simper-to-use version that only needs the branch for true. Note that this and the following
      lemma combined form a solution to Exercise 4.9 in ILN. *)
-Lemma wp_if_true s E id v w e1 e2 P Q:
+Lemma wp_if_true s E id q v w e1 e2 P Q:
   v ≠ HV_trap ->
   v ≠ wasm_zero ->
-  {{{ P ∗ id ↦ₕ v }}} e1 @ s; E {{{ RET w; Q }}} ⊢
-  {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
+  {{{ P ∗ id ↦ₕ{ q } v }}} e1 @ s; E {{{ RET w; Q }}} ⊢
+  {{{ P ∗ id ↦ₕ{ q } v }}} (HE_if id e1 e2) @ s; E
   {{{ RET w; Q }}}.
 Proof.
   move => HNTrap HNZero.
@@ -492,10 +492,10 @@ Proof.
     iIntros (Φ) "[? [?%]] ?"; subst => //.
 Qed.
 
-Lemma wp_if_false s E id w e1 e2 P Q:
-  {{{ P ∗ id ↦ₕ wasm_zero }}} e2 @ s; E {{{ RET w; Q }}} ⊢
-  {{{ P ∗ id ↦ₕ wasm_zero }}} (HE_if id e1 e2) @ s; E
-  {{{ RET w; Q }}}.
+Lemma wp_if_false s E id q v e1 e2 P Q:
+  {{{ P ∗ id ↦ₕ{ q } wasm_zero }}} e2 @ s; E {{{ RET v; Q }}} ⊢
+  {{{ P ∗ id ↦ₕ{ q } wasm_zero }}} (HE_if id e1 e2) @ s; E
+  {{{ RET v; Q }}}.
 Proof.
   iIntros "#HF".
   iApply wp_if => //.
@@ -515,15 +515,13 @@ Qed.
     'wp_lift_pure_step' to avoid having to manually opening the states and dealing with fupd 
     modalities.
 *)
-Lemma wp_while s E id v w e P Q:
-  v ≠ HV_trap ->
-  {{{ P ∗ id ↦ₕ v }}} (HE_if id (HE_seq e (HE_while id e)) (HE_value wasm_zero)) @ s; E {{{ RET w; Q }}} ⊢
-  {{{ P ∗ id ↦ₕ v }}} (HE_while id e) @ s; E {{{ RET w; Q }}}.
+Lemma wp_while s E id w e P Q:
+  {{{ P }}} (HE_if id (HE_seq e (HE_while id e)) (HE_value wasm_zero)) @ s; E {{{ RET w; Q }}} ⊢
+  {{{ P }}} (HE_while id e) @ s; E {{{ RET w; Q }}}.
 Proof.
-  move => HNTrap.
   iIntros "#HT".
   iModIntro.
-  iIntros (Φ) "[HP Hh] HQ".
+  iIntros (Φ) "HP HQ".
   iApply wp_lift_pure_step_no_fork.
   - move => σ1. destruct σ1 as [[hs ws] locs].
     destruct s => //.
@@ -534,7 +532,7 @@ Proof.
   - repeat iModIntro.
     iIntros (κ e2 efs σ) "%".
     inv_head_step.
-    iApply ("HT" with "[HP Hh]"); by iFrame.
+    iApply ("HT" with "HP"); by iFrame.
 Qed.
   
 End lifting.
