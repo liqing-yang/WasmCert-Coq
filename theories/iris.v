@@ -114,6 +114,9 @@ Notation "n ↦₄ v" := (mapsto (L:=N) (V:=option global) n 1 (Some v%V))
 
 Let wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
 
+Global Instance wasm_lang_inhabited : Inhabited (language.state wasm_lang) :=
+  populate (∅, Build_store_record [::] [::] [::] [::], [::]).
+
 Section lifting.
 
 Context `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wmemG Σ, !wglobG Σ}.
@@ -420,18 +423,19 @@ End IrisNew.
      defining it as an evaluation context. We have to see what needs to be done here. For 
      example, the following version, albeit sensible, does not seem to be provable at 
      the moment. *)
-(* UPD: THIS IS PROVED!!!! *)
-(* TODO: ADD DETAILED COMMENTS ON HOW TO RESOLVE FUPD, AND EXPLAIN WHY IT IS HARDER TO DO IT
-           IN IRIS 3.3 *)
-Lemma wp_if_true s E id v w e1 e2 P Q:
-  v <> wasm_zero->
-  v <> HV_trap ->
-  {{{ P ∗ id ↦ₕ v }}} e1 @ s; E {{{ RET w; Q }}} ⊢
+(* TODO: Add detailed comments on how to resolve fupd in both iris 3.3 and new iris *)
+Lemma wp_if s E id v w e1 e2 P Q:
+  v ≠ HV_trap ->
+  {{{ P ∗ id ↦ₕ v ∗ ⌜ v ≠ wasm_zero ⌝ }}} e1 @ s; E {{{ RET w; Q }}} ∗
+  {{{ P ∗ id ↦ₕ v ∗ ⌜ v = wasm_zero ⌝ }}} e2 @ s; E {{{ RET w; Q }}} ⊢
   {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
   {{{ RET w; Q }}}.
 Proof.
-  move => HNzero HNTrap.
-  iIntros "#HT".
+  move => HNTrap.
+  iIntros "[#HT #HF]".
+  (* If the goal involves more than one triples (unlike the previous proofs), the conclusion 
+       will somehow have a □ modality around. That's not a problem nonetheless since our premises
+       are persistent as well. *)
   iModIntro.
   iIntros (Φ) "[HP Hh] HΦ".
   iApply wp_lift_step => //.
@@ -442,9 +446,11 @@ Proof.
   iDestruct (gen_heap_valid with "Hhs Hh") as %?.
   (* I really wish we're using the new version of Iris, where we can just apply one of the new
        fupd intro lemmas to get this fupd into a premise. But we don't have that currently. *)
-  (* UPD: After some treasure hunting, this is also doable via an iMod! *)
-  (* TODO: add comments on resolving this fupd modality. Old version: only do iMod fupd_intro_mask'. New version: either iMod fupd_intro_subseteq or iApply fupd_mask_intro. *)
-  (* TODO: update to the current version of Iris -- which involves upgrading Coq to 8.12? *)
+  (* UPD: After some treasure hunting, this is also doable in Iris 3.3 via an iMod! *)
+  (* TODO: add comments on resolving this fupd modality. Iris 3.3: only do iMod 
+       fupd_intro_mask'. New Iris: either iMod fupd_intro_subseteq or iApply fupd_mask_intro. *)
+  (* TODO: upgrade to the current version of Iris -- upgrade Coq to 8.12? But need to fix 
+       CompCert compilation issues. Maybe better when there's no ongoing changes *)
   iMod (fupd_intro_mask' E ∅) as "Hfupd"; first by set_solver.
   iModIntro.
   iSplit.
@@ -453,48 +459,82 @@ Proof.
   - iModIntro.
     iIntros (e0 σ2 efs HStep).
     inv_head_step.
+    (* There are 4 cases for the lookup result: non-zero/zero/trap/none. trap is automatically
+         resolved by the first premise, and none is impossible by the mapsto predicate. *)
     + iMod "Hfupd".
       iModIntro.
       iFrame.
       iApply ("HT" with "[HP Hh]") => //; by iFrame.
-    + by rewrite H in H12.
-Qed.
-
-Lemma wp_if_false s E id v w e1 e2 P Q:
-  v = wasm_zero ->
-  {{{ P ∗ id ↦ₕ v }}} e2 @ s; E {{{ RET w; Q }}} ⊢
-  {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
-  {{{ RET w; Q }}}.
-Proof.
-  move => HNzero.
-  iIntros "#HT".
-  iModIntro.
-  iIntros (Φ) "[HP Hh] HΦ".
-  iApply wp_lift_step => //.
-  iIntros (σ1 κ κs n) "Hσ".
-  destruct σ1 as [[hs ws] locs].
-  simpl in *.
-  iDestruct "Hσ" as "[Hhs Ho]".
-  iDestruct (gen_heap_valid with "Hhs Hh") as %?.
-  (* I really wish we're using the new version of Iris, where we can just apply one of the new
-       fupd intro lemmas to get this fupd into a premise. But we don't have that currently. *)
-  (* UPD: After some treasure hunting, this is also doable via an iMod! *)
-  (* TODO: add comments on resolving this fupd modality. Old version: only do iMod fupd_intro_mask'. New version: either iMod fupd_intro_subseteq or iApply fupd_mask_intro. *)
-  (* TODO: update to the current version of Iris -- which involves upgrading Coq to 8.12? *)
-  iMod (fupd_intro_mask' E ∅) as "Hfupd"; first by set_solver.
-  iModIntro.
-  iSplit.
-  - iPureIntro. destruct s => //.
-    by apply he_if_reducible.
-  - iModIntro.
-    iIntros (e0 σ2 efs HStep).
-    inv_head_step.
     + iMod "Hfupd".
       iModIntro.
       iFrame.
-      iApply ("HT" with "[HP Hh]") => //; first by iFrame.
+      iApply ("HF" with "[HP Hh]") => //; by iFrame.
     + by rewrite H in H12.
 Qed.
 
+(* a simper-to-use version that only needs the branch for true. Note that this and the following
+     lemma combined form a solution to Exercise 4.9 in ILN. *)
+Lemma wp_if_true s E id v w e1 e2 P Q:
+  v ≠ HV_trap ->
+  v ≠ wasm_zero ->
+  {{{ P ∗ id ↦ₕ v }}} e1 @ s; E {{{ RET w; Q }}} ⊢
+  {{{ P ∗ id ↦ₕ v }}} (HE_if id e1 e2) @ s; E
+  {{{ RET w; Q }}}.
+Proof.
+  move => HNTrap HNZero.
+  iIntros "#HT".
+  iApply wp_if => //.
+  iSplit.
+  - iModIntro.
+    iIntros (Φ) "[HP [Hh Hn0]] HQ".
+    iApply ("HT" with "[HP Hh Hn0]"); by iFrame.
+  - iModIntro.
+    iIntros (Φ) "[? [?%]] ?"; subst => //.
+Qed.
+
+Lemma wp_if_false s E id w e1 e2 P Q:
+  {{{ P ∗ id ↦ₕ wasm_zero }}} e2 @ s; E {{{ RET w; Q }}} ⊢
+  {{{ P ∗ id ↦ₕ wasm_zero }}} (HE_if id e1 e2) @ s; E
+  {{{ RET w; Q }}}.
+Proof.
+  iIntros "#HF".
+  iApply wp_if => //.
+  iSplit.
+  - iModIntro.
+    by iIntros (Φ) "[? [?%]] ?" => //.
+  - iModIntro.
+    iIntros (Φ) "[HP [Hh ?]] HQ".
+    iApply ("HF" with "[HP Hh]"); by iFrame.
+Qed.
+
+(* 
+  Almost the same as if -- actually easier, since there's only one case. 
+  We could certainly follow the same proof structure of if. However here we choose another 
+    approach, noting that this step is a 'pure' step, in the sense that there is only one
+    reduction pathway which does not depend on any resource of the state. Therefore we can apply
+    'wp_lift_pure_step' to avoid having to manually opening the states and dealing with fupd 
+    modalities.
+*)
+Lemma wp_while s E id v w e P Q:
+  v ≠ HV_trap ->
+  {{{ P ∗ id ↦ₕ v }}} (HE_if id (HE_seq e (HE_while id e)) (HE_value wasm_zero)) @ s; E {{{ RET w; Q }}} ⊢
+  {{{ P ∗ id ↦ₕ v }}} (HE_while id e) @ s; E {{{ RET w; Q }}}.
+Proof.
+  move => HNTrap.
+  iIntros "#HT".
+  iModIntro.
+  iIntros (Φ) "[HP Hh] HQ".
+  iApply wp_lift_pure_step_no_fork.
+  - move => σ1. destruct σ1 as [[hs ws] locs].
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists. by apply pr_while.
+  - move => κ σ1 e2 σ2 efs HStep.
+    by inv_head_step.
+  - repeat iModIntro.
+    iIntros (κ e2 efs σ) "%".
+    inv_head_step.
+    iApply ("HT" with "[HP Hh]"); by iFrame.
+Qed.
   
 End lifting.
