@@ -34,17 +34,6 @@ Definition those {A} (l : list (option A)) : option (list A) :=
   | Some l => Some (List.rev l)
   end.
 
-(** Same as those, but for list of double option types instead. **)
-Definition those2 {A} (l: list (option (option A))) : option (list A) :=
-  match those l with
-  | None => None
-  | Some l' =>
-    match those l' with
-    | None => None
-    | Some l'' => Some l''
-    end
-  end.
-
 Local Lemma those0_None : forall A (l : list (option A)),
   In None l <-> those0 l = None.
 Proof.

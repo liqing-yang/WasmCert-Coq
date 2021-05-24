@@ -19,7 +19,7 @@ From iris.program_logic Require Export weakestpre total_weakestpre.
 Definition iris_expr := host_expr.
 Definition iris_val := host_value.
 (* Use gmap to specify the host variable store instead. *)
-Definition host_state := gmap id (option iris_val).
+Definition host_state := gmap id iris_val.
 Definition state : Type := host_state * store_record * list host_value.
 Definition observation := unit. (* TODO: ??? *)
 

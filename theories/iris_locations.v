@@ -79,47 +79,47 @@ Definition lookup_2d {T: Type} (l: list (list T)) (n: nat) (i: nat) : option T :
   | None => None
   end.
 
-Definition flatten_list_option {T: Type} (l: list T) : list (N * option T) :=
-  imap (fun n x => (N.of_nat n, Some x)) l.
+Definition flatten_list {T: Type} (l: list T) : list (N * T) :=
+  imap (fun n x => (N.of_nat n, x)) l.
 
-Definition gmap_of_list {T: Type} (l: list T) : gmap N (option T) :=
-  list_to_map (flatten_list_option l).
+Definition gmap_of_list {T: Type} (l: list T) : gmap N T :=
+  list_to_map (flatten_list l).
 
-Fixpoint flatten_2d_list_i {T: Type} (l: list (list T)) (i: N) : list ((N*N) * option T) :=
+Fixpoint flatten_2d_list_i {T: Type} (l: list (list T)) (i: N) : list ((N*N) * T) :=
   match l with
   | [::] => [::]
   | l1 :: l' =>
-    let lf := flatten_list_option l1 in
+    let lf := flatten_list l1 in
     (fmap (fun x => match x with | (n, b) => ((i, n), b) end) lf) ++ (flatten_2d_list_i l' (i+1))
   end.
 
-Definition flatten_2d_list {T: Type} (l: list (list T)) : list ((N*N) * option T) :=
+Definition flatten_2d_list {T: Type} (l: list (list T)) : list ((N*N) * T) :=
   flatten_2d_list_i l 0.
 
-Definition gmap_of_list_2d {T: Type} (l: list (list T)) : gmap (N*N) (option T) :=
+Definition gmap_of_list_2d {T: Type} (l: list (list T)) : gmap (N*N) T :=
   list_to_map (flatten_2d_list l).
 
 Definition memory_to_list (m: memory) : list byte :=
   (m.(mem_data)).(memory_list.ml_data).
 
-Definition gmap_of_mem (l: list memory) : gmap (N*N) (option byte) :=
+Definition gmap_of_mem (l: list memory) : gmap (N*N) byte :=
   gmap_of_list_2d (fmap memory_to_list l).
 
 Lemma gmap_of_list_lookup {T: Type} (l: list T) n:
-  (gmap_of_list l) !! n = option_map (fun x => Some x) (l !! (N.to_nat n)).
+  (gmap_of_list l) !! n = l !! (N.to_nat n).
 Proof with resolve_finmap.
-  unfold gmap_of_list, flatten_list_option, option_map.
+  unfold gmap_of_list, flatten_list.
   remember_lookup.
   destruct lookup_res...
   - rewrite Nat2N.id. by rewrite Helem.
-  - apply Nat2N.inj in H1. subst. by rewrite Helem in Helem0.
+  - apply Nat2N.inj in H1. subst. rewrite Helem in Helem0. by inversion Helem0.
   - apply nodup_imap_inj1. move => n1 n2 t1 t2 Heq.
     inversion Heq.
     by apply Nat2N.inj in H1.
   - destruct (l !! (N.to_nat n)) eqn: Hlookup => //.
     exfalso. apply H2. clear H2.
     apply elem_of_list_fmap.
-    exists (n, Some t). split => //.
+    exists (n, t). split => //.
     apply elem_of_lookup_imap.
     exists (N.to_nat n), t. split => //.
     by rewrite N2Nat.id.
@@ -128,18 +128,16 @@ Qed.
 (* Commutativity between gmap_of_list and list_insert. *)
 Lemma gmap_of_list_insert {T: Type} (l: list T) (v: T) n:
   N.to_nat n < length l ->
-  gmap_of_list (<[N.to_nat n:=v]> l) = <[n:=Some v]> (gmap_of_list l).
+  gmap_of_list (<[N.to_nat n:=v]> l) = <[n:=v]> (gmap_of_list l).
 Proof with resolve_finmap.
   move => Hlen.
   apply map_eq. move => i.
   rewrite gmap_of_list_lookup.
-  unfold option_map.
   destruct (decide (i = n)).
   - subst. rewrite lookup_insert. by rewrite list_lookup_insert.
   - rewrite lookup_insert_ne => //.
     rewrite list_lookup_insert_ne => //.
-    + rewrite gmap_of_list_lookup.
-      by unfold option_map.
+    + by rewrite gmap_of_list_lookup.
     + move => HContra. apply n0.
       by apply N2Nat.inj.    
 Qed.

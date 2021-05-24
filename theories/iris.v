@@ -13,6 +13,7 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
 Require Import common operations_iris datatypes_iris datatypes_properties_iris.
+Require Import iris_locations iris_base iris_opsem.
 
 From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
@@ -20,8 +21,6 @@ From iris.algebra Require Import auth.
 From iris.bi.lib Require Import fractional.
 From iris.base_logic.lib Require Export gen_heap proph_map gen_inv_heap.
 From iris.program_logic Require Export weakestpre total_weakestpre.
-
-Require Import iris_locations iris_base iris_opsem.
 
 Lemma wasm_mixin : LanguageMixin of_val to_val head_step.
 Proof.
@@ -36,32 +35,32 @@ Definition proph_id := unit. (* ??? *)
 
 Class hsG Σ := HsG {
   hs_invG : invG Σ;
-  hs_gen_hsG :> gen_heapG id (option iris_val) Σ
+  hs_gen_hsG :> gen_heapG id iris_val Σ
 }.
 
 Class locG Σ := LocG {
   loc_invG : invG Σ;
-  loc_gen_hsG :> gen_heapG N (option iris_val) Σ
+  loc_gen_hsG :> gen_heapG N iris_val Σ
 }.
 
 Class wfuncG Σ := WFuncG {
   func_invG : invG Σ;
-  func_gen_hsG :> gen_heapG N (option function_closure) Σ;
+  func_gen_hsG :> gen_heapG N function_closure Σ;
 }.
 
 Class wtabG Σ := WTabG {
   tab_invG : invG Σ;
-  tab_gen_hsG :> gen_heapG N (option tableinst) Σ;
+  tab_gen_hsG :> gen_heapG N tableinst Σ;
 }.
 
 Class wmemG Σ := WMemG {
   mem_invG : invG Σ;
-  mem_gen_hsG :> gen_heapG (N*N) (option byte) Σ;
+  mem_gen_hsG :> gen_heapG (N*N) byte Σ;
 }.
 
 Class wglobG Σ := WGlobG {
   glob_invG : invG Σ;
-  glob_gen_hsG :> gen_heapG N (option global) Σ;
+  glob_gen_hsG :> gen_heapG N global Σ;
 }.
 
 Instance heapG_irisG `{hsG Σ, locG Σ, wfuncG Σ, wtabG Σ, wmemG Σ, wglobG Σ} : irisG wasm_lang Σ := {
@@ -82,34 +81,34 @@ Instance heapG_irisG `{hsG Σ, locG Σ, wfuncG Σ, wtabG Σ, wmemG Σ, wglobG Σ
 (* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
      (fractional algebra). 
    We really only need either 0/1 permission for our language, though. *)
-Notation "i ↦ₕ{ q } v" := (mapsto (L:=id) (V:=option host_value) i q (Some v%V))
+Notation "i ↦ₕ{ q } v" := (mapsto (L:=id) (V:=host_value) i q v%V)
                            (at level 20, q at level 5, format "i ↦ₕ{ q } v") : bi_scope.
-Notation "i ↦ₕ v" := (mapsto (L:=id) (V:=option host_value) i 1 (Some v%V))
+Notation "i ↦ₕ v" := (mapsto (L:=id) (V:=host_value) i 1 v%V)
                       (at level 20, format "i ↦ₕ v") : bi_scope.
-Notation "n ↦ₗ{ q } v" := (mapsto (L:=N) (V:=option host_value) n q (Some v%V))
+Notation "n ↦ₗ{ q } v" := (mapsto (L:=N) (V:=host_value) n q v%V)
                            (at level 20, q at level 5, format "n ↦ₗ{ q } v") : bi_scope.
-Notation "n ↦ₗ v" := (mapsto (L:=N) (V:=option host_value) n 1 (Some v%V))
+Notation "n ↦ₗ v" := (mapsto (L:=N) (V:=host_value) n 1 v%V)
                       (at level 20, format "n ↦ₗ v") : bi_scope.
 (* Unfortunately Unicode does not have every letter in the subscript small latin charset, so we 
      will have to fall back on indices for now. It's best to use subscripts with 2 letters such
      as wf/wt/wm/wg, but immediately we realize we don't have w in the character set. A 
      workaround is to use some pretty printing macro option in emacs, but that will not be 
      displayed when viewed on github etc. *)
-Notation "n ↦₁{ q } v" := (mapsto (L:=N) (V:=option function_closure) n q (Some v%V))
+Notation "n ↦₁{ q } v" := (mapsto (L:=N) (V:=function_closure) n q v%V)
                            (at level 20, q at level 5, format "n ↦₁{ q } v") : bi_scope.
-Notation "n ↦₁ v" := (mapsto (L:=N) (V:=option function_closure) n 1 (Some v%V))
+Notation "n ↦₁ v" := (mapsto (L:=N) (V:=function_closure) n 1 v%V)
                       (at level 20, format "n ↦₁ v") : bi_scope.
-Notation "n ↦₂{ q } v" := (mapsto (L:=N) (V:=option tableinst) n q (Some v%V))
+Notation "n ↦₂{ q } v" := (mapsto (L:=N) (V:=tableinst) n q v%V)
                            (at level 20, q at level 5, format "n ↦₂{ q } v") : bi_scope.
-Notation "n ↦₂ v" := (mapsto (L:=N) (V:=option tableinst) n 1 (Some v%V))
+Notation "n ↦₂ v" := (mapsto (L:=N) (V:=tableinst) n 1 v%V)
                       (at level 20, format "n ↦₂ v") : bi_scope.
-Notation "n [ i ] ↦₃{ q } v" := (mapsto (L:=N*N) (V:=option byte) (n, i) q (Some v%V))
+Notation "n [ i ] ↦₃{ q } v" := (mapsto (L:=N*N) (V:=byte) (n, i) q v%V)
                            (at level 20, q at level 5, format "n [ i ] ↦₃{ q } v") : bi_scope.
-Notation "n [ i ] ↦₃ v" := (mapsto (L:=N*N) (V:=option byte) (n, i) 1 (Some v%V))
+Notation "n [ i ] ↦₃ v" := (mapsto (L:=N*N) (V:=byte) (n, i) 1 v%V)
                            (at level 20, format "n [ i ] ↦₃ v") : bi_scope.
-Notation "n ↦₄{ q } v" := (mapsto (L:=N) (V:=option global) n q (Some v%V))
+Notation "n ↦₄{ q } v" := (mapsto (L:=N) (V:=global) n q v%V)
                            (at level 20, q at level 5, format "n  ↦₄{ q } v") : bi_scope.
-Notation "n ↦₄ v" := (mapsto (L:=N) (V:=option global) n 1 (Some v%V))
+Notation "n ↦₄ v" := (mapsto (L:=N) (V:=global) n 1 v%V)
                       (at level 20, format "n ↦₄ v") : bi_scope.
 
 Let wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
@@ -140,9 +139,8 @@ Ltac inv_head_step :=
      destruct H
          end.
 
-(* The following 3 lemmas establish that reducible in Ectxilanguagemixin is the same as 
-     reducible in the sense of taking a head_step in our language, due to having an empty
-     Ectx item only. *)
+(* The following 3 lemmas establish that reducible is the same as taking a head_step in our
+     language. *)
 Lemma reducible_head_step e σ:
   reducible e σ ->
   exists e' σ', head_step e σ [] e' σ' [].
@@ -343,7 +341,9 @@ Proof.
 Qed.
 
 (* This is now very interesting and a bit different to setglobal, since we need to retrieve the
-     value to be set from a resource first. *)
+     value to be set from a resource first. 
+   Note the ownership required for the different types of resources.
+*)
 Lemma wp_setlocal s E n q id w v:
   {{{ n ↦ₗ w ∗ id ↦ₕ{ q } v }}} (HE_setlocal n id) @ s; E
   {{{ RET v; n ↦ₗ v ∗ id ↦ₕ{ q } v}}}.
@@ -375,7 +375,7 @@ Proof.
       iMod (gen_heap_update with "Hlocs Hl") as "[Hlocs Hl]".
       simpl.
       repeat iModIntro.
-      (* It takes rather long time for Iris to find the correct frame. *)
+      (* It takes rather long for Iris to find the correct frame. *)
       iFrame.
       simpl.
       rewrite gmap_of_list_insert => //.
@@ -391,38 +391,19 @@ Lemma he_if_reducible: forall id e1 e2 σ,
 Proof.
   move => id e1 e2 [[hs ws] locs].
   apply hs_red_equiv.
-  destruct (hs !! id) as [ores|] eqn:Hlookup; try destruct ores as [res|].
+  destruct (hs !! id) as [res|] eqn:Hlookup.
   - destruct (decide (res = HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)))); subst.
     + repeat eexists; by eapply pr_if_false.
     + destruct (decide (res = HV_trap)); subst; repeat eexists.
       * by eapply pr_if_trap.
       * by eapply pr_if_true.
-  - repeat eexists. by eapply pr_if_some_none.
   - repeat eexists. by eapply pr_if_none.
 Qed.
 
-(*
-Section IrisNew.
-
-Context `{BiFUpd PROP}.
-(* This is a proved lemma in the current newest Iris, but not Iris 3.3. *)
-(* Actually neither the lemma it relies on is in Iris 3.3, so we resort to another method to 
-     introduce the fupd modality. *)
-Lemma fupd_mask_intro E1 E2 (P: PROP) {HAbs: Absorbing P}:
-  E2 ⊆ E1 →
-  ((|={E2,E1}=> emp) -∗ P) -∗ |={E1,E2}=> P.
-Proof.
-  intros. etrans; [|by apply fupd_mask_weaken]. by rewrite -fupd_intro.
-Qed.
-
-End IrisNew.
- *)
-
 (* We now get to some control flow instructions. It's a bit tricky since rules like these
      do not need to be explicitly dealt with in Heaplang, but instead taken automatically by 
-     defining it as an evaluation context. We have to see what needs to be done here. For 
-     example, the following version, albeit sensible, does not seem to be provable at 
-     the moment. *)
+     defining it as an evaluation context. We have to see what needs to be done here. The proof
+     to this should be a standard model to other context-like instructions (seq, etc.). *)
 (* TODO: Add detailed comments on how to resolve fupd in both iris 3.3 and new iris *)
 Lemma wp_if s E id q v w e1 e2 P Q:
   v ≠ HV_trap ->
@@ -514,6 +495,8 @@ Qed.
     reduction pathway which does not depend on any resource of the state. Therefore we can apply
     'wp_lift_pure_step' to avoid having to manually opening the states and dealing with fupd 
     modalities.
+  Note that we do not actually need any knowledge on the host variable id, since we're delaying
+    the lookup to one step later.
 *)
 Lemma wp_while s E id w e P Q:
   {{{ P }}} (HE_if id (HE_seq e (HE_while id e)) (HE_value wasm_zero)) @ s; E {{{ RET w; Q }}} ⊢
