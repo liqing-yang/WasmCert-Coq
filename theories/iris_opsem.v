@@ -233,12 +233,12 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   (* record exprs *)
   | pr_new_rec:
     forall hs s locs kip hvs kvp,
-      list_extra.those (map (fun id => hs !! id) (unzip2 kip)) = Some hvs ->
-      zip (unzip1 kip) hvs = kvp ->
+      list_extra.those (fmap (fun id => hs !! id) kip.*2) = Some hvs ->
+      zip kip.*1 hvs = kvp ->
       pure_reduce hs s locs (HE_new_rec kip) hs s locs (HE_value (HV_record kvp))
   | pr_new_rec_trap:
     forall hs s locs kip,
-      list_extra.those (map (fun id => hs !! id) (unzip2 kip)) = None ->
+      list_extra.those (fmap (fun id => hs !! id) kip.*2) = None ->
       pure_reduce hs s locs (HE_new_rec kip) hs s locs (HE_value HV_trap)
   | pr_getfield:
     forall hs s locs id fname kvp hv,
@@ -271,9 +271,9 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       s.(s_funcs) !! i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
-      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
+      list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
       list_host_value_to_wasm vars = Some vs ->
-      tn = map typeof vs ->
+      tn = fmap typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
   | pr_call_trap1:
     forall hs s locs id ids,
@@ -291,7 +291,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_trap4:
     forall hs s locs id ids,
-      list_extra.those (map (fun id => hs !! id) ids) = None ->
+      list_extra.those (fmap (fun id => hs !! id) ids) = None ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)
   | pr_call_wasm_trap1:
     forall hs s locs id ids i cl j tf vts bes vars tn tm,
@@ -299,7 +299,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       s.(s_funcs) !! i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
-      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
+      list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
       list_host_value_to_wasm vars = None ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_wasm_trap2:
@@ -308,9 +308,9 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       s.(s_funcs) !! i = Some cl ->
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
-      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
+      list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
       list_host_value_to_wasm vars = Some vs ->
-      tn <> map typeof vs ->
+      tn <> fmap typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_host:
     forall hs s ids cl id i n e tf tn tm vars vs locs,
@@ -320,7 +320,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       tf = Tf tn tm ->
       list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
       list_host_value_to_wasm vars = Some vs -> (* TODO: change this to explicit casts, then add a trap case. *)
-      tn = map typeof vs ->
+      tn = fmap typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
   (* wasm state exprs *)
   | pr_table_create:
@@ -411,13 +411,13 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       pure_reduce hs s locs (HE_seq (HE_value v) e) hs s locs e
   | pr_wasm_return:
     forall hs s locs vs,      
-      pure_reduce hs s locs (HE_wasm_frame (v_to_e_list vs)) hs s locs (HE_value (HV_list (map (fun wv => (HV_wasm_value wv)) vs)))
+      pure_reduce hs s locs (HE_wasm_frame (v_to_e_list vs)) hs s locs (HE_value (HV_list (fmap (fun wv => (HV_wasm_value wv)) vs)))
   | pr_wasm_return_trap:
       forall hs s locs,
       pure_reduce hs s locs (HE_wasm_frame ([::AI_trap])) hs s locs (HE_value (HV_trap))
   | pr_host_return:
     forall hs s locsf locs ids e vs tn,
-      list_extra.those (map (fun id => hs !! id) ids) = Some vs ->
+      list_extra.those (fmap (fun id => hs !! id) ids) = Some vs ->
       pure_reduce hs s locsf (HE_host_frame tn locs (HE_seq (HE_return ids) e)) hs s locsf (HE_value (HV_list vs))
 
 (* TODO: needs all the host_expr reduction steps: compile, instantiate, etc. *)
@@ -476,7 +476,7 @@ with wasm_reduce : host_state -> store_record -> datatypes_iris.frame -> list ad
       length t1s = n ->
       length t2s = m ->
       (* TODO: check if this is what we want *)
-      map (fun x => HV_wasm_value x) vcs = vs ->
+      fmap (fun x => HV_wasm_value x) vcs = vs ->
       wasm_reduce hs s f (ves ++ [::AI_invoke a]) hs' s' f [::AI_host_frame t1s vs e]
 
   | wr_host_step :
@@ -487,8 +487,8 @@ with wasm_reduce : host_state -> store_record -> datatypes_iris.frame -> list ad
   | wr_host_return :
     (* TODO: check *)
     forall hs s f ts vs ids vs' vs'',
-    list_extra.those (map (fun id => hs !! id) ids) = Some vs' ->
-    Some vs'' = list_extra.those (List.map (fun x => match x with | HV_wasm_value v => Some v | _ => None end) vs') ->
+    list_extra.those (fmap (fun id => hs !! id) ids) = Some vs' ->
+    Some vs'' = list_extra.those (fmap (fun x => match x with | HV_wasm_value v => Some v | _ => None end) vs') ->
     wasm_reduce hs s f [::AI_host_frame ts vs (HE_return ids)] hs s f (v_to_e_list vs'')
 (*  
   | wr_host_new_host_func :

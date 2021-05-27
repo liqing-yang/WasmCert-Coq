@@ -517,5 +517,139 @@ Proof.
     inv_head_step.
     iApply ("HT" with "HP"); by iFrame.
 Qed.
-  
+
+Lemma those_none: forall {T: Type} (l: list (option T)),
+  list_extra.those l = None <-> None ∈ l.
+Proof.
+  intros.
+  rewrite - list_extra.those_those0.
+  induction l => //=.
+  - split => //.
+    unfold elem_of.
+    move => HContra.
+    by inversion HContra.
+  - destruct a => //; rewrite elem_of_cons.
+    + unfold option_map.
+      destruct (those0 l) eqn:Hthose.
+      * split => //.
+        move => [H|H]; try by inversion H.
+        apply IHl in H.
+        by inversion H.
+      * split => //. intros _.
+        right. by apply IHl.
+    + split => //.
+      intros _. by left.
+Qed.
+
+Lemma those_length: forall {T: Type} (l: list (option T)) (le: list T),
+  list_extra.those l = Some le -> length l = length le.
+Proof.
+  move => T l le H.
+  rewrite - list_extra.those_those0 in H.
+  move: l le H.
+  induction l => //=.
+  - move => le H. simpl in H.
+    by inversion H.
+  - move => le H.
+    destruct a => //=.
+    unfold option_map in H.
+    destruct (those0 _) eqn:H2 => //=.
+    inversion H; subst; clear H.
+    simpl.
+    f_equal.
+    by apply IHl.
+Qed.
+    
+Lemma wp_new_rec s E (kip: list (field_name * id)) (w: list (field_name * host_value)) P:
+  length kip = length w ->
+  (∀ i key id,
+      ⌜ kip !! i = Some (key, id) ⌝ -∗
+      ∃ v, ⌜ w !! i = Some (key, v)⌝ ∗
+      □(P -∗ ( id ↦ₕ v ))) ⊢
+  {{{ P }}} (HE_new_rec kip) @ s; E {{{ RET (HV_record w); P }}}.
+Proof.
+  move => HLength.
+  iIntros "#Hkvp".
+  iModIntro.
+  iIntros (Φ) "HP HQ".
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 κ κs n) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs Ho]".
+  repeat iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    destruct (list_extra.those (fmap (fun id => hs !! id) (kip.*2))) eqn:Hkvp; repeat eexists.
+    + by eapply pr_new_rec.
+    + by eapply pr_new_rec_trap.
+  - iModIntro.
+    iIntros (e2 σ2 efs HStep).
+    repeat iModIntro.
+    iAssert ( ∀ (i: nat) (key: field_name) (id: id), ⌜ kip !! i = Some (key, id) ⌝ -∗
+                           ∃ v, ⌜w !! i = Some (key, v) ⌝ ∗ ⌜ hs !! id = Some v ⌝ )%I as "%".
+    {
+      iIntros (i key id) "Hlookup".
+      iAssert ((∃ v, ⌜ w !! i = Some (key, v) ⌝ ∗ □(P -∗ id ↦ₕ v))%I) with "[Hlookup]" as "H".
+      {
+        by iApply "Hkvp".
+      }
+      iDestruct "H" as (v) "[H1 #H2]".
+      iExists v.
+      iFrame.
+      iDestruct (gen_heap_valid with "Hhs [H2 HP]") as %?; first by iApply "H2".
+      by iPureIntro.
+    }
+    inv_head_step; iFrame; iSplit => //.
+    + iAssert (⌜ zip kip.*1 hvs = w ⌝)%I as "%".
+      {
+        iPureIntro.
+        move: kip hvs HLength H H2.
+        induction w => //; move => kip hvs HLength H H2.
+        * simpl in HLength.
+          by destruct kip => //.
+        * destruct kip => //=.
+          simpl in HLength.
+          inversion HLength. clear HLength.
+          destruct hvs => //=.
+          - simpl in H2.
+            apply those_length in H2.
+            simpl in H2.
+            by inversion H2.
+          - destruct p => /=.
+            rewrite - list_extra.those_those0 in H2.
+            simpl in H2.
+            destruct (hs' !! i) eqn: Hlookup => //.
+            unfold option_map in H2.
+            destruct (those0 _) eqn: H3 => //.
+            inversion H2; subst; clear H2.
+            rewrite list_extra.those_those0 in H3.
+            apply IHw in H3 => //.
+            + rewrite H3.
+              f_equal.
+              assert (exists v, (a :: w) !! 0 = Some (f, v) /\ hs' !! i = Some v) as HL; first by apply H.
+              simpl in HL.
+              destruct HL as [v [H4 H5]].
+              inversion H4; subst; clear H4.
+              rewrite H5 in Hlookup. by inversion Hlookup.
+            + move => i0 key id Hlookup0.
+              assert (exists v, (a :: w) !! (S i0) = Some (key, v) /\ hs' !! id = Some v) as Hgoal.
+              { apply H.
+                by rewrite lookup_cons_ne_0 => /=. }
+              simpl in Hgoal.
+              assumption.
+      }
+      subst. by iApply "HQ".
+    + apply those_none in H5.
+      resolve_finmap.
+      destruct x0. simpl in *.
+      apply elem_of_list_lookup in Helem0.
+      destruct Helem0 as [i0 Heq0].
+      apply H in Heq0.
+      destruct Heq0 as [v [Heq2 Hlookup]].
+      by rewrite Hlookup in Heq.
+Qed.
+
 End lifting.
