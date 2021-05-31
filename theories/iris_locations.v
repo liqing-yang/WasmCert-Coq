@@ -8,7 +8,7 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Require Import common operations_iris datatypes_iris datatypes_properties_iris iris_base.
+Require Import common operations_iris datatypes_iris datatypes_properties_iris.
 From stdpp Require Import gmap.
 From iris.proofmode Require Import tactics.
 From iris.algebra Require Import auth.
