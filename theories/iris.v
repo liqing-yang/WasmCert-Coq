@@ -31,7 +31,7 @@ Definition observation := unit. (* TODO: ??? *)
 
 Definition of_val (v : iris_val) : iris_expr := HE_value v.
 
-Fixpoint to_val (e : iris_expr) : option iris_val :=
+Definition to_val (e : iris_expr) : option iris_val :=
   match e with
   | HE_value v => Some v
   | _ => None
@@ -749,7 +749,7 @@ Notation "n ↦₄{ q } v" := (mapsto (L:=N) (V:=global) n q v%V)
 Notation "n ↦₄ v" := (mapsto (L:=N) (V:=global) n 1 v%V)
                       (at level 20, format "n ↦₄ v") : bi_scope.
 
-Let wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
+Definition wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
 
 Global Instance wasm_lang_inhabited : Inhabited (language.state wasm_lang) :=
   populate (∅, Build_store_record [::] [::] [::] [::], [::]).
