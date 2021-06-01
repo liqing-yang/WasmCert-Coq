@@ -1,4 +1,5 @@
 (** Iris bindings **)
+
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
 
 From mathcomp Require Import ssreflect ssrbool eqtype seq.
@@ -10,16 +11,15 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-From stdpp Require Import gmap.
+From stdpp Require Import gmap strings.
 From iris.algebra Require Import auth.
 From iris.bi.lib Require Import fractional.
-From iris.proofmode Require Import tactics.
-From iris.base_logic.lib Require Export gen_heap proph_map gen_inv_heap.
-From iris.program_logic Require Export weakestpre total_weakestpre.
-From iris.program_logic Require Import language.
+From iris.proofmode Require Import base tactics spec_patterns string_ident ident_name sel_patterns coq_tactics reduction intro_patterns ltac_tactics.
+From iris.base_logic.lib Require Import gen_heap proph_map gen_inv_heap.
+From iris.program_logic Require Import weakestpre total_weakestpre.
+From iris.program_logic Require Export language lifting.
 
-Require Import common operations_iris datatypes_iris datatypes_properties_iris.
-Require Import list_extra.
+Require Export common operations_iris datatypes_iris datatypes_properties_iris.
 Require Import iris_locations.
 
 Definition iris_expr := host_expr.
@@ -712,8 +712,9 @@ Instance heapG_irisG `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wmemG Σ, !wgl
       (gen_heap_interp (gmap_of_list s.(s_globals)))
     )%I;
   fork_post _ := True%I;
-  num_laters_per_step := (fun x => 0); (* TODO: weird, but makes this compile *)
+  num_laters_per_step _ := 0;
   state_interp_mono _ _ _ _ := fupd_intro _ _
+  
 }.
 
 (* This means the proposition that 'the location l of the heap has value v, and we own q of it' 
@@ -805,12 +806,15 @@ Proof.
   intro HRed. destruct HRed as [?[??]]. by eapply head_step_reducible.
 Qed.
 
+Open Scope string_scope.
+
 Lemma wp_getglobal s E id q v:
   {{{ id ↦ₕ{ q } v }}} (HE_getglobal id) @ s; E
   {{{ RET v; id ↦ₕ{ q } v }}}.
 Proof.
   (* Some explanations on proofmode tactics and patterns are available on 
        https://gitlab.mpi-sws.org/iris/iris/blob/master/docs/proof_mode.md *)
+  (* After 2 days the solution is finally found -- need to 'Open Scope string_scope' first. *)
   iIntros (Φ) "Hl HΦ".
   iApply wp_lift_atomic_step => //.
   (*
