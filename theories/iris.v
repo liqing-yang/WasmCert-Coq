@@ -722,11 +722,11 @@ Instance heapG_irisG `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wmemG Σ, !wgl
    We really only need either 0/1 permission for our language, though. *)
 Notation "i ↦ₕ{ q } v" := (mapsto (L:=id) (V:=host_value) i q v%V)
                            (at level 20, q at level 5, format "i ↦ₕ{ q } v") : bi_scope.
-Notation "i ↦ₕ v" := (mapsto (L:=id) (V:=host_value) i 1 v%V)
+Notation "i ↦ₕ v" := (mapsto (L:=id) (V:=host_value) i (DfracOwn 1) v%V)
                       (at level 20, format "i ↦ₕ v") : bi_scope.
 Notation "n ↦ₗ{ q } v" := (mapsto (L:=N) (V:=host_value) n q v%V)
                            (at level 20, q at level 5, format "n ↦ₗ{ q } v") : bi_scope.
-Notation "n ↦ₗ v" := (mapsto (L:=N) (V:=host_value) n 1 v%V)
+Notation "n ↦ₗ v" := (mapsto (L:=N) (V:=host_value) n (DfracOwn 1) v%V)
                       (at level 20, format "n ↦ₗ v") : bi_scope.
 (* Unfortunately Unicode does not have every letter in the subscript small latin charset, so we 
      will have to fall back on indices for now. It's best to use subscripts with 2 letters such
@@ -735,19 +735,19 @@ Notation "n ↦ₗ v" := (mapsto (L:=N) (V:=host_value) n 1 v%V)
      displayed when viewed on github etc. *)
 Notation "n ↦₁{ q } v" := (mapsto (L:=N) (V:=function_closure) n q v%V)
                            (at level 20, q at level 5, format "n ↦₁{ q } v") : bi_scope.
-Notation "n ↦₁ v" := (mapsto (L:=N) (V:=function_closure) n 1 v%V)
+Notation "n ↦₁ v" := (mapsto (L:=N) (V:=function_closure) n (DfracOwn 1) v%V)
                       (at level 20, format "n ↦₁ v") : bi_scope.
 Notation "n ↦₂{ q } v" := (mapsto (L:=N) (V:=tableinst) n q v%V)
                            (at level 20, q at level 5, format "n ↦₂{ q } v") : bi_scope.
-Notation "n ↦₂ v" := (mapsto (L:=N) (V:=tableinst) n 1 v%V)
+Notation "n ↦₂ v" := (mapsto (L:=N) (V:=tableinst) n (DfracOwn 1) v%V)
                       (at level 20, format "n ↦₂ v") : bi_scope.
 Notation "n [ i ] ↦₃{ q } v" := (mapsto (L:=N*N) (V:=byte) (n, i) q v%V)
                            (at level 20, q at level 5, format "n [ i ] ↦₃{ q } v") : bi_scope.
-Notation "n [ i ] ↦₃ v" := (mapsto (L:=N*N) (V:=byte) (n, i) 1 v%V)
+Notation "n [ i ] ↦₃ v" := (mapsto (L:=N*N) (V:=byte) (n, i) (DfracOwn 1) v%V)
                            (at level 20, format "n [ i ] ↦₃ v") : bi_scope.
 Notation "n ↦₄{ q } v" := (mapsto (L:=N) (V:=global) n q v%V)
                            (at level 20, q at level 5, format "n  ↦₄{ q } v") : bi_scope.
-Notation "n ↦₄ v" := (mapsto (L:=N) (V:=global) n 1 v%V)
+Notation "n ↦₄ v" := (mapsto (L:=N) (V:=global) n (DfracOwn 1) v%V)
                       (at level 20, format "n ↦₄ v") : bi_scope.
 
 Definition wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
@@ -821,7 +821,7 @@ Proof.
     This is just another iIntros although with something new: !>. This !> pattern is for
       removing the ={E}=* from our goal (this symbol represents an update modality).
   *)
-  iIntros (σ1 κ κs n) "Hσ !>".
+  iIntros (σ1 ns κ κs nt) "Hσ !>".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
   iDestruct "Hσ" as "[Hhs Ho]".
@@ -849,7 +849,7 @@ Lemma wp_setglobal_value s E id w v:
 Proof.
   intros HNTrap.
   iIntros (Φ) "Hl HΦ". iApply wp_lift_atomic_step => //.
-  iIntros (σ1 κ κs n) "Hσ !>".
+  iIntros (σ1 ns κ κs nt) "Hσ !>".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
   iDestruct "Hσ" as "[Hhs Ho]".
@@ -875,7 +875,7 @@ Lemma wp_setglobal_trap s E id Ψ:
   {{{ RET (HV_trap); Ψ }}}.
 Proof.
   iIntros (Φ) "Hl HΦ". iApply wp_lift_atomic_step => //.
-  iIntros (σ1 κ κs n) "Hσ !>".
+  iIntros (σ1 ns κ κs nt) "Hσ !>".
   iSplit.
   - destruct s => //.
     iPureIntro. destruct σ1 as [[hs ws] locs].
@@ -920,12 +920,12 @@ Proof.
   destruct (to_val e) as [v|] eqn:He.
   { apply of_to_val in He as <-. iApply fupd_wp. by iApply "Hv". }
   rewrite wp_unfold /wp_pre /=.
-  iIntros (σ1 κ κs n) "Hσ".
+  iIntros (σ1 ns κ κs nt) "Hσ".
   (* How to resolve this fancy update modality? *)
   (* Update: using iMod is fine, just that in this case Iris doens't automatically
        instantiate the variables for Hev for some reasons. *)
   (* $! means instantiate the hypothesis with the following variables. *)
-  iMod ("Hev" $! σ1 κ κs n with "Hσ") as "[% H]".
+  iMod ("Hev" $! σ1 ns κ κs nt with "Hσ") as "[% H]".
   iModIntro; iSplit.
   {
     destruct s; eauto.
@@ -944,8 +944,8 @@ Proof.
   (* The pattern "[//]" seems to mean automaitcally deduce the required assumption for 
        elimnating the modality using H (like inserting an eauto). *)
   (* TODO: I forgot what's going on here. Add comments on how these modalities are resolved. *)
-  iMod ("H" $! e' (hs', s', locs') [] with "[//]") as "H". iIntros "!>!>".
-  iMod "H". iModIntro. iSimpl in "H".
+  iMod ("H" $! e' (hs', s', locs') [] with "[//]") as "H". iIntros "!>!>!>".
+  iMod "H". iMod "H". repeat iModIntro. iSimpl in "H".
   iDestruct "H" as "[Hheap H]".
   iSplitL "Hheap"; first by eauto.
   iSplitL; last by eauto.
@@ -963,7 +963,7 @@ Lemma wp_getlocal s E n q v:
 Proof.
   iIntros (Φ) "Hl HΦ".
   iApply wp_lift_atomic_step => //.
-  iIntros (σ1 κ κs m) "Hσ !>".
+  iIntros (σ1 ms κ κs mt) "Hσ !>".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
   iDestruct "Hσ" as "[Hhs [Hlocs Ho]]".
@@ -992,7 +992,7 @@ Lemma wp_setlocal s E n q id w v:
 Proof.
   iIntros (Φ) "[Hl Hh] HΦ".
   iApply wp_lift_atomic_step => //.
-  iIntros (σ1 κ κs m) "Hσ !>".
+  iIntros (σ1 ms κ κs mt) "Hσ !>".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
   iDestruct "Hσ" as "[Hhs [Hlocs Ho]]".
@@ -1062,7 +1062,7 @@ Proof.
   iModIntro.
   iIntros (Φ) "[HP Hh] HΦ".
   iApply wp_lift_step => //.
-  iIntros (σ1 κ κs n) "Hσ".
+  iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
   iDestruct "Hσ" as "[Hhs Ho]".
@@ -1074,8 +1074,8 @@ Proof.
        fupd_intro_mask'. New Iris: either iMod fupd_intro_subseteq or iApply fupd_mask_intro. *)
   (* TODO: upgrade to the current version of Iris -- upgrade Coq to 8.12? But need to fix 
        CompCert compilation issues. Maybe better when there's no ongoing changes *)
-  iMod (fupd_intro_mask' E ∅) as "Hfupd"; first by set_solver.
-  iModIntro.
+  iApply fupd_mask_intro; first by set_solver.
+  iIntros "Hfupd".
   iSplit.
   - iPureIntro. destruct s => //.
     by apply he_if_reducible.
@@ -1215,7 +1215,7 @@ Proof.
   iModIntro.
   iIntros (Φ) "HP HQ".
   iApply wp_lift_atomic_step => //.
-  iIntros (σ1 κ κs n) "Hσ".
+  iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
   iDestruct "Hσ" as "[Hhs Ho]".
