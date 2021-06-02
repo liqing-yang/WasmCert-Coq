@@ -440,6 +440,10 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   | pr_seq_const:
     forall hs s locs v e,
       pure_reduce hs s locs (HE_seq (HE_value v) e) hs s locs e
+  | pr_seq:
+    forall hs s locs hs' s' locs' e1 e1' e2,
+      pure_reduce hs s locs e1 hs' s' locs' e1' ->
+      pure_reduce hs s locs (HE_seq e1 e2) hs' s' locs' (HE_seq e1' e2)
   | pr_wasm_return:
     forall hs s locs vs,      
       pure_reduce hs s locs (HE_wasm_frame (v_to_e_list vs)) hs s locs (HE_value (HV_list (fmap (fun wv => (HV_wasm_value wv)) vs)))
@@ -1157,7 +1161,7 @@ Proof.
   - repeat iModIntro.
     iIntros (κ e2 efs σ) "%".
     inv_head_step.
-    iApply ("HT" with "HP"); by iFrame.
+    iApply ("HT" with "HP"); by iAssumption.
 Qed.
 
 Lemma those_none: forall {T: Type} (l: list (option T)),
@@ -1231,7 +1235,7 @@ Proof.
     iIntros (e2 σ2 efs HStep).
     repeat iModIntro.
     iAssert ( ∀ (i: nat) (key: field_name) (id: id), ⌜ kip !! i = Some (key, id) ⌝ -∗
-                           ∃ v, ⌜w !! i = Some (key, v) ⌝ ∗ ⌜ hs !! id = Some v ⌝ )%I as "%".
+                           ∃ v, ⌜w !! i = Some (key, v) ⌝ ∗ ⌜ hs !! id = Some v ⌝ )%I as "%H".
     {
       iIntros (i key id) "Hlookup".
       iAssert ((∃ v, ⌜ w !! i = Some (key, v) ⌝ ∗ □(P -∗ id ↦ₕ v))%I) with "[Hlookup]" as "H".
@@ -1245,7 +1249,7 @@ Proof.
       by iPureIntro.
     }
     inv_head_step; iFrame; iSplit => //.
-    + iAssert (⌜ zip kip.*1 hvs = w ⌝)%I as "%".
+    + iAssert (⌜ zip kip.*1 hvs = w ⌝)%I as "%Heq".
       {
         iPureIntro.
         move: kip hvs HLength H H2.
@@ -1293,5 +1297,112 @@ Proof.
       destruct Heq0 as [v [Heq2 Hlookup]].
       by rewrite Hlookup in Heq.
 Qed.
+
+Lemma wp_getfield s E id fieldname kvp v:
+  lookup_kvp kvp fieldname = Some v ->
+  {{{ id ↦ₕ (HV_record kvp) }}} (HE_get_field id fieldname) @ s; E {{{ RET v; id ↦ₕ (HV_record kvp) }}}.
+Proof.
+  move => HkvpLookup.
+  iIntros (Φ) "Hh HΦ".
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ ns κ κs nt) "Hσ !>".
+  destruct σ as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs Ho]".
+  iDestruct (gen_heap_valid with "Hhs Hh") as "%".
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    by eapply pr_getfield.
+  - iModIntro.
+    iIntros (e2 σ2 efs) "%HStep".
+    destruct σ2 as [[hs2 ws2] locs2] => //=.
+    iModIntro.
+    inv_head_step.
+    + iFrame.
+      iSplit => //=.
+      by iApply "HΦ".
+    + by rewrite H in H11.    
+Qed.
+
+Lemma wp_seq_value s E v w e P Q:
+  v ≠ HV_trap ->
+  □{{{ P }}} e @ s; E {{{ RET w; Q }}} -∗
+  {{{ P }}} HE_seq (HE_value v) e @ s; E {{{ RET w; Q }}}.
+Proof.
+  move => Hvalue.
+  iIntros "#HE !>" (Φ) "HP HΦ".
+  iApply wp_lift_pure_step_no_fork.
+  - move => σ.
+    destruct σ as [[hs ws] locs].
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    by apply pr_seq_const.
+  - move => κ σ1 e2 σ2 efs HStep.
+    by inv_head_step.
+  - repeat iModIntro.
+    iIntros (κ e2 efs σ) "%HStep".
+    inv_head_step.
+    iApply ("HE" with "HP"); by iAssumption.
+Qed.    
+  
+Lemma wp_seq s E e1 e2 Φ Ψ:
+  (WP e1 @ s; E {{ v, Ψ v }} ∗
+  (∀ v, (Ψ v) -∗ WP e2 @ s; E {{ Φ }})) ⊢
+  WP HE_seq e1 e2 @ s; E {{ Φ }}.    
+Proof.
+  iLöb as "IH" forall (E e1 Φ Ψ).
+  iIntros "[H1 H2]".
+  repeat rewrite wp_unfold /wp_pre /=.
+  iIntros (σ ns κ κs nt) "Hσ".
+  destruct (to_val e1) as [v|] eqn:He.
+  { apply of_to_val in He as <-.
+    iMod "H1".
+    iApply fupd_mask_intro; first by set_solver.
+    iIntros "HMask".
+    iSplit.
+    - iPureIntro. destruct s => //=.
+      apply hs_red_equiv.
+      destruct σ as [[??]?].
+      repeat eexists.
+      by apply pr_seq_const.
+    - iIntros (e0 σ2 efs) "%HStep".
+      inv_head_step.
+      repeat iModIntro.
+      iMod "HMask".
+      repeat iModIntro.
+      iFrame.
+      by iApply "H2"; iAssumption.
+  }
+  iMod ("H1" $! σ ns κ κs nt with "Hσ") as "[% H]".  
+  iModIntro; iSplit.
+  {
+    destruct s; eauto.
+    iPureIntro.
+    apply hs_red_equiv in H. destruct H as [e' [σ' H]].
+    inv_head_step.
+    apply hs_red_equiv.
+    repeat eexists.
+    by apply pr_seq.
+  }
+  iIntros (e0 σ2 efs Hstep).
+  inv_head_step.
+  iMod ("H" $! e1' (hs', s', locs') [] with "[//]") as "H". iIntros "!>!>!>".
+  iMod "H". iMod "H". repeat iModIntro. iSimpl in "H".
+  iDestruct "H" as "[Hheap [H _]]".
+  iFrame.
+  iSplit => //.
+  iApply "IH".
+  by iFrame.
+Qed.
+
+Lemma wp_seq_hoare s E e1 e2 P Q R v1 v2:
+  {{{ P }}} e1 @ s; E {{{ RET v1; Q }}} ∗
+  {{{ Q }}} e2 @ s; E {{{ RET v2; R }}} ⊢
+  {{{ P }}} HE_seq e1 e2 @ s; E {{{ RET v2; R }}}.
+Admitted.
 
 End lifting.
