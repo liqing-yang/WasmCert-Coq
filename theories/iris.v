@@ -454,6 +454,10 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
     forall hs s locsf locs ids e vs tn,
       list_extra.those (fmap (fun id => hs !! id) ids) = Some vs ->
       pure_reduce hs s locsf (HE_host_frame tn locs (HE_seq (HE_return ids) e)) hs s locsf (HE_value (HV_list vs))
+  | pr_host_return_trap:
+    forall hs s locsf locs ids e tn,
+      list_extra.those (fmap (fun id => hs !! id) ids) = None ->
+      pure_reduce hs s locsf (HE_host_frame tn locs (HE_seq (HE_return ids) e)) hs s locsf (HE_value HV_trap)
 
 (* TODO: needs all the host_expr reduction steps: compile, instantiate, etc. *)
 (* TODO: needs restructuring to make sense *)
@@ -1205,7 +1209,12 @@ Proof.
     f_equal.
     by apply IHl.
 Qed.
-    
+
+Lemma those_lookup: forall {T: Type} (l: list (option T)) (le: list T) n,
+  list_extra.those l = Some le -> Some (le !! n) = l !! n.
+Proof.
+Admitted.
+  
 Lemma wp_new_rec s E (kip: list (field_name * id)) (w: list (field_name * host_value)) P:
   length kip = length w ->
   (∀ i key id,
@@ -1329,7 +1338,7 @@ Qed.
 
 Lemma wp_seq_value s E v w e P Q:
   v ≠ HV_trap ->
-  □{{{ P }}} e @ s; E {{{ RET w; Q }}} -∗
+  {{{ P }}} e @ s; E {{{ RET w; Q }}} -∗
   {{{ P }}} HE_seq (HE_value v) e @ s; E {{{ RET w; Q }}}.
 Proof.
   move => Hvalue.
@@ -1348,7 +1357,8 @@ Proof.
     inv_head_step.
     iApply ("HE" with "HP"); by iAssumption.
 Qed.    
-  
+
+(* TODO: add another version that uses hoare triples instead of wps. *)
 Lemma wp_seq s E e1 e2 Φ Ψ:
   (WP e1 @ s; E {{ v, Ψ v }} ∗
   (∀ v, (Ψ v) -∗ WP e2 @ s; E {{ Φ }})) ⊢
@@ -1399,10 +1409,137 @@ Proof.
   by iFrame.
 Qed.
 
-Lemma wp_seq_hoare s E e1 e2 P Q R v1 v2:
-  {{{ P }}} e1 @ s; E {{{ RET v1; Q }}} ∗
-  {{{ Q }}} e2 @ s; E {{{ RET v2; R }}} ⊢
-  {{{ P }}} HE_seq e1 e2 @ s; E {{{ RET v2; R }}}.
+(*
+  | pr_host_return:
+    forall hs s locsf locs ids e vs tn,
+      list_extra.those (fmap (fun id => hs !! id) ids) = Some vs ->
+      pure_reduce hs s locsf (HE_host_frame tn locs (HE_seq (HE_return ids) e)) hs s locsf (HE_value (HV_list vs))
+
+  Note that we actually have the list of local variables living in the instruction here...
+
+  This spec is proved, but it sounds a bit weak. For example, no information about the local
+     variable is extracted from P and no similar information is obtained in the post condition.
+ *)
+
+Lemma wp_return s E tn locs ids e (vs: list host_value) P:
+  length vs = length ids ->
+  (∀ n id, ⌜ ids !! n = Some id ⌝ -∗ ∃ v, ⌜ vs !! n = Some v ⌝ ∗ □ (P -∗ id ↦ₕ v)) ⊢
+  {{{ P }}} (HE_host_frame tn locs (HE_seq (HE_return ids) e)) @ s; E {{{ RET (HV_list vs); True }}}.
+Proof.
+  move => HLength.
+  iIntros "#Href !>" (Φ) "HP HΦ".
+  iApply wp_lift_atomic_step => //=.
+  iIntros (σ1 ns κ κs nt) "Hσ !>".
+  destruct σ1 as [[hs ws] ls].
+  iDestruct "Hσ" as "[Hhs Ho]".
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    destruct (those (fmap (fun (id: datatypes_iris.id) => hs !! id) ids)) eqn:Hlookup; repeat eexists.
+    + by eapply pr_host_return.
+    + by eapply pr_host_return_trap.
+  - iIntros "!>" (e2 σ2 efs HStep) "!>".
+    destruct σ2 as [[hs2 ws2] locs2].
+    iAssert ( ∀ (n: nat) (id: datatypes_iris.id), ⌜ ids !! n = Some id ⌝ -∗
+                           ∃ v, ⌜vs !! n = Some v ⌝ ∗ ⌜ hs !! id = Some v ⌝ )%I as "%H".
+    {
+      iIntros (n id) "Hlookup".
+      iAssert ((∃ v, ⌜ vs !! n = Some v ⌝ ∗ □(P -∗ id ↦ₕ v))%I) with "[Hlookup]" as "H".
+      {
+        by iApply "Href".
+      }
+      iDestruct "H" as (v) "[H1 #H2]".
+      iExists v.
+      iFrame.
+      iDestruct (gen_heap_valid with "Hhs [H2 HP]") as %?; first by iApply "H2".
+      by iPureIntro.
+    }
+    inv_head_step; iFrame; iSplit => //.
+    + replace vs0 with vs; first iApply "HΦ" => //.
+      apply list_eq.
+      move => i.
+      destruct (ids !! i) eqn:Hlookup.
+      * apply those_lookup with (n := i) in H13.
+        symmetry in H13.
+        rewrite list_lookup_fmap in H13.
+        rewrite Hlookup in H13.
+        simpl in H13.
+        inversion H13; clear H13.
+        apply H in Hlookup.
+        destruct Hlookup as [x [Heqvs Heqhs]].
+        by rewrite Heqhs.
+      * apply those_length in H13.
+        rewrite fmap_length in H13.
+        apply lookup_ge_None in Hlookup.
+        assert (vs !! i = None) as H1.
+        { apply lookup_ge_None. by rewrite HLength. }
+        assert (vs0 !! i = None).
+        { apply lookup_ge_None. by rewrite - H13. }
+        by rewrite H1.
+    + apply those_none in H13.
+      resolve_finmap.
+      apply elem_of_list_lookup in Helem.
+      destruct Helem as [i Heqid].
+      apply H in Heqid.
+      destruct Heqid as [hv [Heq' Helem]].
+      by rewrite Helem in Heq.
+Qed.
+      
+(*
+  | pr_new_host_func:
+    forall hs s locs htf locsn e s' n,
+      s' = {|s_funcs := s.(s_funcs) ++ [::datatypes_iris.FC_func_host htf locsn e]; s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
+      n = length s.(s_funcs) ->
+      pure_reduce hs s locs (HE_new_host_func htf (N_of_nat locsn) e) hs s' locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx n))))
+ *)
+
+Lemma wp_new_host_func s E htf locsn e P:
+  exists n,
+  {{{ P }}} (HE_new_host_func htf (N_of_nat locsn) e) @ s; E {{{ RET (HV_wov (WOV_funcref (Mk_funcidx (N.to_nat n)))) ; n ↦₁ FC_func_host htf locsn e }}}.
+Proof.
+Admitted.
+
+(*
+  | pr_call_wasm:
+    forall hs s ids cl id i j vts bes tf vs tn tm vars locs,
+      hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      s.(s_funcs) !! i = Some cl ->
+      cl = FC_func_native j tf vts bes ->
+      tf = Tf tn tm ->
+      list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
+      list_host_value_to_wasm vars = Some vs ->
+      tn = fmap typeof vs ->
+      pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
+*)
+
+Lemma wp_call_wasm : True.
+Proof.
+Admitted.
+
+(*
+  | pr_call_host:
+    forall hs s ids cl id i n e tf tn tm vars vs locs,
+      hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      s.(s_funcs) !! i = Some cl ->
+      cl = FC_func_host tf n e ->
+      tf = Tf tn tm ->
+      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
+      list_host_value_to_wasm vars = Some vs -> (* TODO: change this to explicit casts, then add a trap case. *)
+      tn = fmap typeof vs ->
+      pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
+*)
+Lemma wp_call_host : True.
+Proof.
+Admitted.
+
+(*
+  | rs_unop : forall v op t,
+    reduce_simple [::AI_basic (BI_const v); AI_basic (BI_unop t op)] [::AI_basic (BI_const (@app_unop op v))]
+                   
+*)
+Lemma wp_wasm_rs_unop: True.
+Proof.
 Admitted.
 
 End lifting.
