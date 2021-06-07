@@ -1409,6 +1409,23 @@ Proof.
   by iFrame.
 Qed.
 
+Lemma wp_seq_hoare s E e1 e2 P Q R v w:
+  ({{{ P }}} e1 @ s; E {{{ RET v; Q }}} ∗
+  {{{ Q }}} e2 @ s; E {{{ RET w; R }}})%I ⊢
+  {{{ P }}} HE_seq e1 e2 @ s; E {{{ RET w; R }}}.
+Proof.
+  iIntros "[#H1 #H2]" (Φ) "!> HP HΦ".
+  iApply wp_seq.
+  iSplitL "HP HΦ".
+  - iApply ("H1" with "HP").
+    iIntros "!> HQ".
+    (* This is actually subtle: we need to 'carry' all the information to the second part. *)
+    instantiate (1 := (fun v => (Q ∗ (R -∗ Φ w)))%I).
+    by iFrame.
+  - iIntros (v0) "[HQ HΦ]".
+    by iApply ("H2" with "HQ").
+Qed.
+  
 (*
   | pr_host_return:
     forall hs s locsf locs ids e vs tn,
@@ -1529,10 +1546,8 @@ Proof.
     instantiate (1 := FC_func_host htf locsn e).
     iModIntro.
     iFrame.
-    rewrite - gmap_of_list_insert.
-    
-    
-Admitted.
+    by rewrite - gmap_of_list_append.
+Qed.    
 
 (*
   | pr_call_wasm:
