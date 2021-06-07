@@ -1494,10 +1494,44 @@ Qed.
       pure_reduce hs s locs (HE_new_host_func htf (N_of_nat locsn) e) hs s' locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx n))))
  *)
 
-Lemma wp_new_host_func s E htf locsn e P:
-  exists n,
-  {{{ P }}} (HE_new_host_func htf (N_of_nat locsn) e) @ s; E {{{ RET (HV_wov (WOV_funcref (Mk_funcidx (N.to_nat n)))) ; n ↦₁ FC_func_host htf locsn e }}}.
+Lemma wp_new_host_func s E htf locsn e:
+  ⊢
+  (WP HE_new_host_func htf (N_of_nat locsn) e @ s; E
+  {{ fun v => match v with
+           | HV_wov (WOV_funcref (Mk_funcidx n)) => N.of_nat n ↦₁ FC_func_host htf locsn e
+           | _ => False
+           end
+  }})%I.
 Proof.
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[?[?[Hwf ?]]]".
+  iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    by apply pr_new_host_func.
+  - iModIntro.
+    iIntros (e2 σ2 efs HStep).
+    destruct σ2 as [[hs2 ws2] locs2].
+    inv_head_step.
+    iMod (gen_heap_alloc with "Hwf") as "(Hσ & Hl & Hm)".
+    {
+      instantiate (1 := N.of_nat (length ws.(s_funcs))).
+      rewrite gmap_of_list_lookup.
+      rewrite Nat2N.id.
+      by rewrite lookup_ge_None.
+    }
+    instantiate (1 := FC_func_host htf locsn e).
+    iModIntro.
+    iFrame.
+    rewrite - gmap_of_list_insert.
+    
+    
 Admitted.
 
 (*

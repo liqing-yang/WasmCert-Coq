@@ -141,6 +141,36 @@ Proof with resolve_finmap.
     + move => HContra. apply n0.
       by apply N2Nat.inj.    
 Qed.
+
+Lemma gmap_of_list_append {T: Type} (l: list T) (v: T):
+  gmap_of_list (l ++ [:: v]) = <[N.of_nat (length l) := v]> (gmap_of_list l).
+Proof with resolve_finmap.
+  apply map_eq. move => i.
+  repeat rewrite gmap_of_list_lookup.
+  destruct (decide (i = N.of_nat (length l))).
+  - subst. rewrite Nat2N.id. rewrite lookup_insert. rewrite lookup_app.
+    destruct (l !! length l) eqn:Hlookup => //=.
+    + apply lookup_lt_Some in Hlookup. lia.
+    + by replace (length l - length l) with 0; last lia.
+  - remember_lookup. symmetry.
+    destruct lookup_res...
+    + assert (N.to_nat i < length l) as HLength.
+      { apply lookup_lt_Some in Hlookup.
+        rewrite app_length in Hlookup. simpl in Hlookup.
+        lia. }
+      rewrite lookup_insert_ne => //.
+      rewrite gmap_of_list_lookup.
+      rewrite lookup_app in Hlookup.
+      destruct (l !! N.to_nat i) eqn:Hlookup2 => //=.
+      apply lookup_ge_None in Hlookup2.
+      lia.
+    + apply lookup_ge_None in Hlookup.
+      rewrite lookup_insert_ne => //.
+      rewrite gmap_of_list_lookup.
+      apply lookup_ge_None.
+      rewrite app_length in Hlookup; simpl in Hlookup.
+      lia.
+Qed.
   
 (* Old
 Inductive loc : Type :=
