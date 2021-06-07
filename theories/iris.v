@@ -1562,8 +1562,39 @@ Qed.
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
 *)
 
-Lemma wp_call_wasm : True.
+Lemma he_call_reducible id ids hs ws locs:
+  @reducible wasm_lang (HE_call id ids) (hs, ws, locs).
 Proof.
+Admitted.
+  
+Lemma wp_call_wasm id ids vs i s E P Q v j tn tm vts bes:
+  length ids = length vs ->
+  fmap typeof vs = tn ->
+  □(P -∗
+     (id ↦ₕ HV_wov (WOV_funcref (Mk_funcidx i)) ∗
+      N.of_nat i ↦₁ FC_func_native j (Tf tn tm) vts bes ∗
+      (∀ n idx, ⌜ ids !! n = Some idx ⌝ -∗ ∃ wv, ⌜ vs !! n = Some wv ⌝ ∗ idx ↦ₕ HV_wasm_value wv))) -∗
+  {{{ P }}} (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i])) @ s; E {{{ RET v; Q }}} -∗
+  {{{ P }}} HE_call id ids @ s; E {{{ RET v; Q }}}.
+Proof.
+  move => HLen HType.
+  iIntros "#HPrem #HwFrame" (Φ) "!> HP HΦ".
+  iApply wp_lift_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  iApply fupd_mask_intro; first by set_solver.
+  iIntros "Hfupd".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs [? [Hwf ?]]]".
+  iSplit.
+  - iPureIntro.
+    destruct s => //=.
+    by apply he_call_reducible.
+  - iIntros "!>" (e2 σ2 efs HStep).
+    iMod "Hfupd".
+    iModIntro.
+    inv_head_step.
+    admit.
 Admitted.
 
 (*
