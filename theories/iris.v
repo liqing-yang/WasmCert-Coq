@@ -1211,10 +1211,26 @@ Proof.
 Qed.
 
 Lemma those_lookup: forall {T: Type} (l: list (option T)) (le: list T) n,
-  list_extra.those l = Some le -> Some (le !! n) = l !! n.
+  list_extra.those l = Some le -> option_map (fun x => Some x) (le !! n) = l !! n.
 Proof.
-Admitted.
-  
+  move => T l le n Hthose.
+  rewrite - those_those0 in Hthose.
+  move : le n Hthose.
+  induction l => //=; move => le n Hthose.
+  - inversion Hthose; subst; clear Hthose.
+    unfold option_map.
+    by repeat rewrite list_lookup_empty.
+  - destruct a => //=.
+    unfold option_map in *.
+    destruct le => //=; first by destruct (those0 l).
+    destruct n => //=.
+    + destruct (those0 l) => //.
+      by inversion Hthose.
+    + destruct (those0 l) => //.
+      inversion Hthose; subst; clear Hthose.
+      by apply IHl. 
+Qed.
+      
 Lemma wp_new_rec s E (kip: list (field_name * id)) (w: list (field_name * host_value)) P:
   length kip = length w ->
   (∀ i key id,
@@ -1476,10 +1492,12 @@ Proof.
       move => i.
       destruct (ids !! i) eqn:Hlookup.
       * apply those_lookup with (n := i) in H13.
+        unfold option_map in H13.
         symmetry in H13.
         rewrite list_lookup_fmap in H13.
         rewrite Hlookup in H13.
         simpl in H13.
+        destruct (vs0 !! i) => //=.
         inversion H13; clear H13.
         apply H in Hlookup.
         destruct Hlookup as [x [Heqvs Heqhs]].
@@ -1612,18 +1630,21 @@ Proof.
         apply those_lookup with (n0 := n) in H11.
         rewrite list_lookup_fmap in H11. 
         unfold host_value_to_wasm in H11.
-        destruct (vars !! n) as [hv'|] eqn:Hvars => //.
-        simpl in H11.
+        unfold option_map in H6, H11.
         rewrite Hlookupid in H6.
-        simpl in H6.
+        destruct (vars !! n) as [hv'|] eqn:Hvars => //.
+        destruct (vs0 !! n) => //.
+        simpl in H6, H11.
         inversion H6; subst; clear H6.
+        inversion H11; subst; clear H11.
+        destruct hv' => //.
+        inversion H2; subst; clear H2.
         rewrite H0 in Hvars.
         apply Hval in Hlookupid.
         destruct Hlookupid as [hv [Heqvs Heqwv]].
         rewrite Heqvs.
         rewrite - H0 in Heqwv.
-        inversion Heqwv; subst; clear Heqwv.
-        by inversion H11.
+        by inversion Heqwv.
       * apply lookup_ge_None in Hlookupid.
         assert (length vs <= n); first by rewrite HLen in Hlookupid.
         assert (vs !! n = None) as Hvsn; first by apply lookup_ge_None.
@@ -1657,20 +1678,30 @@ Proof.
     + exfalso; apply H16; clear H16.
       apply list_eq. move => n.
       repeat rewrite list_lookup_fmap.
-      apply those_lookup with (n0 := n) in H11, H6.
+      apply those_lookup with (n0 := n) in H6, H11.
+      unfold option_map in H6, H11.
       rewrite list_lookup_fmap in H6.
       rewrite list_lookup_fmap in H11.
-      destruct (ids !! n) eqn:Hlookupid => //.
-      unfold host_value_to_wasm in H11.
-      simpl in H6.
-      inversion H6; subst; clear H6.
-      apply Hval in Hlookupid.
-      destruct Hlookupid as [hv [Heqvs Heqwv]].
-      rewrite - H0 in Heqwv.
-      rewrite Heqwv in H11.
-      simpl in H11.
-      inversion H11; subst; clear H11.
-      rewrite Heqvs. by rewrite H1.
+      destruct (ids !! n) eqn:Hlookupid => //=.
+      * unfold host_value_to_wasm in H11.
+        destruct (vars !! n) => //.
+        destruct (vs0 !! n) => //.
+        simpl in H6, H11.
+        destruct h => //.
+        inversion H6; subst; clear H6.
+        inversion H11; subst; clear H11.
+        apply Hval in Hlookupid.
+        destruct Hlookupid as [hv [Heqvs Heqwv]].
+        rewrite - H0 in Heqwv.
+        inversion Heqwv; subst; clear Heqwv.
+        by rewrite Heqvs.
+      * apply lookup_ge_None in Hlookupid.
+        destruct (vars !! n) => //.
+        simpl in *.
+        destruct (vs0 !! n) => //.
+        assert (vs !! n = None) as H; last by rewrite H => //.
+        apply lookup_ge_None.
+        by rewrite - HLen.
 Qed.
 
 (*
