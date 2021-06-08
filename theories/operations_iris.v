@@ -139,23 +139,11 @@ Definition host_value_to_wasm (hv: host_value) : option value :=
   | _ => None
   end.
 
-Definition list_host_value_to_wasm (hvs: list host_value) : option (list value) :=
-  list_extra.those (map host_value_to_wasm hvs).
-
 Definition host_type_to_wasm (hvt: host_type) : option value_type :=
   match hvt with
   | HT_wt t => Some t
   | _ => None
   end.
-
-Definition list_host_type_to_wasm (hvts: list host_type) : option (list value_type) :=
-  list_extra.those (map host_type_to_wasm hvts).
-
-Definition lookup_host_vars (vcs : list i32) hs : option (list host_value) :=
-  list_extra.those
-    (List.map
-      (fun i => hs i)
-      vcs).
 
 (* TODO: maybe change the structure of kvp into a gmap *)
 Fixpoint lookup_kvp (kvp: list (field_name * host_value)) (fname: field_name) :=
@@ -163,17 +151,6 @@ Fixpoint lookup_kvp (kvp: list (field_name * host_value)) (fname: field_name) :=
   | [::] => None
   | (f, hv) :: kvp' => if f == fname then Some hv else lookup_kvp kvp' fname
   end.
-
-Definition lookup_host_vars_as_i32s vcs hs : option (list host_value) :=
-  list_extra.those
-    (List.map
-      (fun x =>
-        match x with
-        | VAL_int32 i =>
-          hs i
-        | _ => None
-        end)
-      vcs).
 
 Fixpoint to_bytelist (l: seq host_value) : option (seq byte) :=
   match l with

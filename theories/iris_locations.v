@@ -55,6 +55,9 @@ Ltac resolve_finmap :=
            inversion H; subst; simpl in *; try by []
          | H: _ |- (_, _) ∈ map_to_list _ =>
            apply elem_of_map_to_list
+         | H: _ ∈ ?l |- _ =>
+           let Helem := fresh "Helem" in
+           try is_var l; apply elem_of_list_lookup in H; destruct H as [? Helem]
          | _ => simpl in *; try by eauto
          end.
 

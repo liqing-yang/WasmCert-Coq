@@ -303,7 +303,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
       list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
-      list_host_value_to_wasm vars = Some vs ->
+      list_extra.those (fmap host_value_to_wasm vars) = Some vs ->
       tn = fmap typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
   | pr_call_trap1:
@@ -331,7 +331,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
       list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
-      list_host_value_to_wasm vars = None ->
+      list_extra.those (fmap host_value_to_wasm vars) = None ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_wasm_trap2:
     forall hs s locs id ids i cl j tf vts bes vars tn tm vs,
@@ -340,7 +340,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       cl = FC_func_native j tf vts bes ->
       tf = Tf tn tm ->
       list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
-      list_host_value_to_wasm vars = Some vs ->
+      list_extra.those (fmap host_value_to_wasm vars) = Some vs ->
       tn <> fmap typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_host:
@@ -350,7 +350,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       cl = FC_func_host tf n e ->
       tf = Tf tn tm ->
       list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
-      list_host_value_to_wasm vars = Some vs -> (* TODO: change this to explicit casts, then add a trap case. *)
+      list_extra.those (fmap host_value_to_wasm vars) = Some vs ->
       tn = fmap typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
   (* wasm state exprs *)
@@ -1300,10 +1300,8 @@ Proof.
     + apply those_none in H5.
       resolve_finmap.
       destruct x0. simpl in *.
-      apply elem_of_list_lookup in Helem0.
-      destruct Helem0 as [i0 Heq0].
-      apply H in Heq0.
-      destruct Heq0 as [v [Heq2 Hlookup]].
+      apply H in Helem.
+      destruct Helem as [v [Heq2 Hlookup]].
       by rewrite Hlookup in Heq.
 Qed.
 
@@ -1496,10 +1494,8 @@ Proof.
         by rewrite H1.
     + apply those_none in H13.
       resolve_finmap.
-      apply elem_of_list_lookup in Helem.
-      destruct Helem as [i Heqid].
-      apply H in Heqid.
-      destruct Heqid as [hv [Heq' Helem]].
+      apply H in Helem0.
+      destruct Helem0 as [hv [Heq' Helem]].
       by rewrite Helem in Heq.
 Qed.
       
@@ -1570,15 +1566,17 @@ Admitted.
 Lemma wp_call_wasm id ids vs i s E P Q v j tn tm vts bes:
   length ids = length vs ->
   fmap typeof vs = tn ->
-  □(P -∗
+  (⌜ P =
      (id ↦ₕ HV_wov (WOV_funcref (Mk_funcidx i)) ∗
       N.of_nat i ↦₁ FC_func_native j (Tf tn tm) vts bes ∗
-      (∀ n idx, ⌜ ids !! n = Some idx ⌝ -∗ ∃ wv, ⌜ vs !! n = Some wv ⌝ ∗ idx ↦ₕ HV_wasm_value wv))) -∗
+      (∀ n idx, ⌜ ids !! n = Some idx ⌝ -∗ ∃ wv, ⌜ vs !! n = Some wv ⌝ ∗ idx ↦ₕ HV_wasm_value wv)) ⌝) -∗
   {{{ P }}} (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i])) @ s; E {{{ RET v; Q }}} -∗
   {{{ P }}} HE_call id ids @ s; E {{{ RET v; Q }}}.
 Proof.
   move => HLen HType.
-  iIntros "#HPrem #HwFrame" (Φ) "!> HP HΦ".
+  iIntros "% #HwFrame" (Φ) "!> HP HΦ".
+  subst.
+  iDestruct "HP" as "[Hfref [Hfbody Hval]]".
   iApply wp_lift_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ".
   iApply fupd_mask_intro; first by set_solver.
@@ -1592,10 +1590,88 @@ Proof.
     by apply he_call_reducible.
   - iIntros "!>" (e2 σ2 efs HStep).
     iMod "Hfupd".
+    iDestruct (gen_heap_valid with "Hhs Hfref") as "%Hfref".
+    iDestruct (gen_heap_valid with "Hwf Hfbody") as "%Hfbody".
+    iAssert (∀ n idx, ⌜ids !! n = Some idx ⌝ -∗ ∃ wv, ⌜ vs !! n = Some wv ⌝ ∗ ⌜ hs !! idx = Some (HV_wasm_value wv) ⌝)%I as "%Hval".
+    { iIntros (n idx H).
+      iSpecialize ("Hval" $! n idx H).
+      iDestruct "Hval" as (wv) "[?Hid]".
+      iExists wv.
+      iFrame.
+      by iDestruct (gen_heap_valid with "Hhs Hid") as "%".
+    }
+    rewrite gmap_of_list_lookup in Hfbody.
+    rewrite Nat2N.id in Hfbody.
     iModIntro.
-    inv_head_step.
-    admit.
-Admitted.
+    inv_head_step; iFrame.
+    + replace vs0 with vs; first by iApply ("HwFrame" with "[Hfref Hfbody Hval]"); iFrame.
+      apply list_eq. move => n.
+      destruct (ids !! n) eqn:Hlookupid.
+      * apply those_lookup with (n0 := n) in H6.
+        rewrite list_lookup_fmap in H6.
+        apply those_lookup with (n0 := n) in H11.
+        rewrite list_lookup_fmap in H11. 
+        unfold host_value_to_wasm in H11.
+        destruct (vars !! n) as [hv'|] eqn:Hvars => //.
+        simpl in H11.
+        rewrite Hlookupid in H6.
+        simpl in H6.
+        inversion H6; subst; clear H6.
+        rewrite H0 in Hvars.
+        apply Hval in Hlookupid.
+        destruct Hlookupid as [hv [Heqvs Heqwv]].
+        rewrite Heqvs.
+        rewrite - H0 in Heqwv.
+        inversion Heqwv; subst; clear Heqwv.
+        by inversion H11.
+      * apply lookup_ge_None in Hlookupid.
+        assert (length vs <= n); first by rewrite HLen in Hlookupid.
+        assert (vs !! n = None) as Hvsn; first by apply lookup_ge_None.
+        rewrite Hvsn; clear Hvsn.
+        symmetry.
+        apply lookup_ge_None.
+        replace (length vs0) with (length ids) => //.
+        apply those_length in H6, H11. 
+        rewrite fmap_length in H6.
+        rewrite fmap_length in H11.
+        lia.
+    + by rewrite Hfref in H10.
+    + apply those_none in H10.
+      resolve_finmap.
+      apply Hval in Helem0.
+      destruct Helem0 as [hv [Heqvs Heqwv]].
+      by rewrite - Heq in Heqwv.
+    + apply those_none in H15.
+      resolve_finmap.
+      apply those_lookup with (n := x0) in H10.
+      rewrite list_lookup_fmap in H10.
+      rewrite Helem0 in H10.
+      destruct (ids !! x0) eqn: Hids => //.
+      simpl in H10.
+      inversion H10; subst; clear H10.
+      apply Hval in Hids.
+      destruct Hids as [hv [Heqvs Heqwv]].
+      rewrite Heqwv in H0.
+      inversion H0; subst; clear H0.
+      by simpl in Heq.
+    + exfalso; apply H16; clear H16.
+      apply list_eq. move => n.
+      repeat rewrite list_lookup_fmap.
+      apply those_lookup with (n0 := n) in H11, H6.
+      rewrite list_lookup_fmap in H6.
+      rewrite list_lookup_fmap in H11.
+      destruct (ids !! n) eqn:Hlookupid => //.
+      unfold host_value_to_wasm in H11.
+      simpl in H6.
+      inversion H6; subst; clear H6.
+      apply Hval in Hlookupid.
+      destruct Hlookupid as [hv [Heqvs Heqwv]].
+      rewrite - H0 in Heqwv.
+      rewrite Heqwv in H11.
+      simpl in H11.
+      inversion H11; subst; clear H11.
+      rewrite Heqvs. by rewrite H1.
+Qed.
 
 (*
   | pr_call_host:
