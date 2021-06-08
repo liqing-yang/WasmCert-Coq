@@ -49,6 +49,8 @@ Proof.
   move => H. by inversion H.
 Qed.
 
+Definition wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
+
 Inductive reduce_simple : list administrative_instruction -> list administrative_instruction -> Prop :=
 
 (** unop **)
@@ -344,15 +346,22 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
       tn <> fmap typeof vs ->
       pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)  
   | pr_call_host:
-    forall hs s ids cl id i n e tf tn tm vars vs locs,
+    forall hs s ids cl id i n e tf tn tm vars locs,
       hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       s.(s_funcs) !! i = Some cl ->
       cl = FC_func_host tf n e ->
       tf = Tf tn tm ->
-      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
-      list_extra.those (fmap host_value_to_wasm vars) = Some vs ->
-      tn = fmap typeof vs ->
-      pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
+      list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
+      length ids = length tn ->
+      pure_reduce hs s locs (HE_call id ids) hs s locs (HE_host_frame tm (vars ++ List.repeat wasm_zero (length tm)) e)
+  | pr_call_host_trap1:
+    forall hs s ids cl id i n e tf tn tm locs,
+      hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
+      s.(s_funcs) !! i = Some cl ->
+      cl = FC_func_host tf n e ->
+      tf = Tf tn tm ->
+      length ids <> length tn ->
+      pure_reduce hs s locs (HE_call id ids) hs s locs (HE_value HV_trap)
   (* wasm state exprs *)
   | pr_table_create:
     forall hs s locs s' tab len n,
@@ -757,8 +766,6 @@ Notation "n ↦₄{ q } v" := (mapsto (L:=N) (V:=global) n q v%V)
                            (at level 20, q at level 5, format "n  ↦₄{ q } v") : bi_scope.
 Notation "n ↦₄ v" := (mapsto (L:=N) (V:=global) n (DfracOwn 1) v%V)
                       (at level 20, format "n ↦₄ v") : bi_scope.
-
-Definition wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
 
 Global Instance wasm_lang_inhabited : Inhabited (language.state wasm_lang) :=
   populate (∅, Build_store_record [::] [::] [::] [::], [::]).
@@ -1563,23 +1570,28 @@ Proof.
     by rewrite - gmap_of_list_append.
 Qed.    
 
-(*
-  | pr_call_wasm:
-    forall hs s ids cl id i j vts bes tf vs tn tm vars locs,
-      hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
-      s.(s_funcs) !! i = Some cl ->
-      cl = FC_func_native j tf vts bes ->
-      tf = Tf tn tm ->
-      list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
-      list_host_value_to_wasm vars = Some vs ->
-      tn = fmap typeof vs ->
-      pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
-*)
-
 Lemma he_call_reducible id ids hs ws locs:
   @reducible wasm_lang (HE_call id ids) (hs, ws, locs).
 Proof.
-Admitted.
+  apply hs_red_equiv.
+  destruct (hs !! id) eqn: Heqid; last by eapply pr_call_trap1 in Heqid; repeat eexists.
+  destruct i; try by eapply pr_call_trap2 in Heqid; repeat eexists.
+  destruct w; try by eapply pr_call_trap2 in Heqid; repeat eexists.
+  destruct f; try by eapply pr_call_trap2 in Heqid; repeat eexists.
+  destruct (ws.(s_funcs) !! n) eqn: Hfref; last by eapply pr_call_trap3 in Hfref; repeat eexists.
+  destruct (list_extra.those (fmap (fun id => hs !! id) ids)) eqn: Hvals; last by eapply pr_call_trap4 in Hvals; repeat eexists.
+  destruct f.
+  - destruct f as [tn tm].
+    destruct (list_extra.those (fmap host_value_to_wasm l)) eqn: Hwvs; last by eapply pr_call_wasm_trap1 in Hwvs => //; repeat eexists.
+    assert ({tn = fmap typeof l2} + {tn <> fmap typeof l2}); first by decidable_equality.
+    destruct H as [H|H]; subst.
+    + by eapply pr_call_wasm in Heqid; repeat eexists.
+    + by eapply pr_call_wasm_trap2 in H; repeat eexists.
+  - destruct f as [tn tm].
+    destruct (decide (length ids = length tn)) as [H|H]; subst.
+    + by eapply pr_call_host in Hfref; repeat eexists.      
+    + by eapply pr_call_host_trap1 in H; repeat eexists.
+Qed.
   
 Lemma wp_call_wasm id ids vs i s E P Q v j tn tm vts bes:
   length ids = length vs ->
@@ -1706,19 +1718,88 @@ Qed.
 
 (*
   | pr_call_host:
-    forall hs s ids cl id i n e tf tn tm vars vs locs,
+    forall hs s ids cl id i n e tf tn tm vars locs,
       hs !! id = Some (HV_wov (WOV_funcref (Mk_funcidx i))) ->
       s.(s_funcs) !! i = Some cl ->
       cl = FC_func_host tf n e ->
       tf = Tf tn tm ->
-      list_extra.those (map (fun id => hs !! id) ids) = Some vars ->
-      list_host_value_to_wasm vars = Some vs -> (* TODO: change this to explicit casts, then add a trap case. *)
-      tn = fmap typeof vs ->
-      pure_reduce hs s locs (HE_call id ids) hs s locs (HE_wasm_frame ((v_to_e_list vs) ++ [::AI_invoke i]))
+      list_extra.those (fmap (fun id => hs !! id) ids) = Some vars ->
+      length ids = length tn ->
+      pure_reduce hs s locs (HE_call id ids) hs s locs (HE_host_frame tm (vars ++ List.repeat wasm_zero (length tm)) e)
 *)
-Lemma wp_call_host : True.
+Lemma wp_call_host id ids hvs i s E P Q v tn tm n e:
+  length ids = length hvs ->
+  length ids = length tn ->
+  (⌜ P =
+     (id ↦ₕ HV_wov (WOV_funcref (Mk_funcidx i)) ∗
+      N.of_nat i ↦₁ FC_func_host (Tf tn tm) n e ∗
+      (∀ n idx, ⌜ ids !! n = Some idx ⌝ -∗ ∃ hv, ⌜ hvs !! n = Some hv ⌝ ∗ idx ↦ₕ hv)) ⌝) -∗
+  {{{ P }}} (HE_host_frame tm (hvs ++ List.repeat wasm_zero (length tm)) e) @ s; E {{{ RET v; Q }}} -∗
+  {{{ P }}} HE_call id ids @ s; E {{{ RET v; Q }}}.
 Proof.
-Admitted.
+  move => HLen HLenType.
+  iIntros "% #HhFrame" (Φ) "!> HP HΦ".
+  subst.
+  iDestruct "HP" as "[Hfref [Hfbody Hval]]".
+  iApply wp_lift_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  iApply fupd_mask_intro; first by set_solver.
+  iIntros "Hfupd".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs [? [Hwf ?]]]".
+  iSplit.
+  - iPureIntro.
+    destruct s => //=.
+    by apply he_call_reducible.
+  - iIntros "!>" (e2 σ2 efs HStep).
+    iMod "Hfupd".
+    iDestruct (gen_heap_valid with "Hhs Hfref") as "%Hfref".
+    iDestruct (gen_heap_valid with "Hwf Hfbody") as "%Hfbody".
+    iAssert (∀ n idx, ⌜ids !! n = Some idx ⌝ -∗ ∃ hv, ⌜ hvs !! n = Some hv ⌝ ∗ ⌜ hs !! idx = Some hv ⌝)%I as "%Hval".
+    { iIntros (n0 idx H).
+      iSpecialize ("Hval" $! n0 idx H).
+      iDestruct "Hval" as (hv) "[?Hid]".
+      iExists hv.
+      iFrame.
+      by iDestruct (gen_heap_valid with "Hhs Hid") as "%".
+    }
+    rewrite gmap_of_list_lookup in Hfbody.
+    rewrite Nat2N.id in Hfbody.
+    iModIntro.
+    inv_head_step; iFrame.
+    + by rewrite Hfref in H10.
+    + apply those_none in H10.
+      resolve_finmap.
+      apply Hval in Helem0.
+      destruct Helem0 as [hv [Heqvs Heqhv]].
+      by rewrite - Heq in Heqhv.
+    + replace vars with hvs; first by iApply ("HhFrame" with "[Hfref Hfbody Hval]"); iFrame.
+      apply list_eq. move => m.
+      destruct (ids !! m) eqn:Hlookupid.
+      * apply those_lookup with (n0 := m) in H10.
+        rewrite list_lookup_fmap in H10.
+        unfold option_map in H10.
+        rewrite Hlookupid in H10.
+        destruct (vars !! m) as [hv|] eqn:Hvars => //.
+        simpl in H10.
+        inversion H10; subst; clear H10.
+        rewrite H0.
+        apply Hval in Hlookupid.
+        destruct Hlookupid as [hv' [Heqvs Heqhv]].
+        rewrite Heqvs.
+        rewrite - H0 in Heqhv.
+        by inversion Heqhv; subst.
+      * apply lookup_ge_None in Hlookupid.
+        assert (length hvs <= m); first by rewrite HLen in Hlookupid.
+        assert (hvs !! m = None) as Hvsn; first by apply lookup_ge_None.
+        rewrite Hvsn; clear Hvsn.
+        symmetry.
+        apply lookup_ge_None.
+        apply those_length in H10.
+        rewrite fmap_length in H10.
+        lia.
+Qed.
 
 (*
   | rs_unop : forall v op t,
