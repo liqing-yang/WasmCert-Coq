@@ -593,6 +593,10 @@ Inductive administrative_instruction : Type := (* e *)
 | AI_host_frame : list value_type (* TODO: is that right??? *) -> list host_value -> host_expr -> administrative_instruction
 with host_expr : Type :=
 | HE_value : host_value -> host_expr
+| HE_unop : unop -> id -> host_expr
+| HE_binop : binop -> id -> id -> host_expr
+| HE_relop : relop -> id -> id -> host_expr
+| HE_list_concat : id -> id -> host_expr
 | HE_getglobal : id -> host_expr
 | HE_setglobal : id -> host_expr -> host_expr
 | HE_getlocal : N -> host_expr

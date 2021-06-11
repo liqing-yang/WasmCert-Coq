@@ -14,7 +14,7 @@ Unset Printing Implicit Defensive.
 From stdpp Require Import gmap strings.
 From iris.algebra Require Import auth.
 From iris.bi.lib Require Import fractional.
-From iris.proofmode Require Import base tactics spec_patterns string_ident ident_name sel_patterns coq_tactics reduction intro_patterns ltac_tactics.
+From iris.proofmode Require Import tactics.
 From iris.base_logic.lib Require Import gen_heap proph_map gen_inv_heap.
 From iris.program_logic Require Import weakestpre total_weakestpre.
 From iris.program_logic Require Export language lifting.
@@ -185,20 +185,74 @@ Inductive reduce_simple : list administrative_instruction -> list administrative
         lfilled 0 lh [::AI_trap] es ->
         reduce_simple es [::AI_trap]
 .
+(*
+  | rs_binop_success : forall v1 v2 v op t,
+    app_binop op v1 v2 = Some v ->
+    reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_binop t op)] [::AI_basic (BI_const v)]
+  | rs_binop_failure : forall v1 v2 op t,
+    app_binop op v1 v2 = None ->
+    reduce_simple [::AI_basic (BI_const v1); AI_basic (BI_const v2); AI_basic (BI_binop t op)] [::AI_trap]
+ *)
+Print binop.
 
 Inductive pure_reduce : host_state -> store_record -> list host_value -> host_expr ->
                         host_state -> store_record -> list host_value -> host_expr -> Prop :=
-  (* TODO: basic exprs -- arith ops, list ops left *)
+(* TODO: basic exprs -- arith ops, list ops left *)
+  | pr_binop_success:
+    forall hs s locs id1 id2 v1 v2 v op,
+      hs !! id1 = Some (HV_wasm_value v1) ->
+      hs !! id2 = Some (HV_wasm_value v2) ->
+      app_binop op v1 v2 = Some v ->
+      pure_reduce hs s locs (HE_binop op id1 id2) hs s locs (HE_value (HV_wasm_value v))
+  | pr_binop_trap1:
+    forall hs s locs id1 id2 v1 v2 op,
+      hs !! id1 = Some (HV_wasm_value v1) ->
+      hs !! id2 = Some (HV_wasm_value v2) ->
+      app_binop op v1 v2 = None ->
+      pure_reduce hs s locs (HE_binop op id1 id2) hs s locs (HE_value HV_trap)
+  | pr_binop_trap2:
+    forall hs s locs id1 id2 op,
+      hs !! id1 = None ->
+      pure_reduce hs s locs (HE_binop op id1 id2) hs s locs (HE_value HV_trap)
+  | pr_binop_trap3:
+    forall hs s locs id1 id2 op,
+      hs !! id2 = None ->
+      pure_reduce hs s locs (HE_binop op id1 id2) hs s locs (HE_value HV_trap)
+  | pr_binop_trap4:
+    forall hs s locs id1 id2 v1 op,
+      hs !! id1 = Some v1 ->
+      host_value_to_wasm v1 = None ->
+      pure_reduce hs s locs (HE_binop op id1 id2) hs s locs (HE_value HV_trap)
+  | pr_binop_trap5:
+    forall hs s locs id1 id2 v2 op,
+      hs !! id2 = Some v2 ->
+      host_value_to_wasm v2 = None ->
+      pure_reduce hs s locs (HE_binop op id1 id2) hs s locs (HE_value HV_trap)
+  | pr_list_concat:
+    forall hs s locs id1 id2 l1 l2,
+      hs !! id1 = Some (HV_list l1) ->
+      hs !! id2 = Some (HV_list l2) ->
+      pure_reduce hs s locs (HE_list_concat id1 id2) hs s locs (HE_value (HV_list (l1 ++ l2)))
+  | pr_list_concat_trap1:
+    forall hs s locs id1 id2,
+      hs !! id1 = None ->
+      pure_reduce hs s locs (HE_list_concat id1 id2) hs s locs (HE_value HV_trap)
+  | pr_list_concat_trap2:
+    forall hs s locs id1 id2,
+      hs !! id2 = None ->
+      pure_reduce hs s locs (HE_list_concat id1 id2) hs s locs (HE_value HV_trap)
+  | pr_list_concat_trap3:
+    forall hs s locs id1 id2 v1,
+      hs !! id1 = Some v1 ->
+      host_typeof v1 <> Some HT_list ->
+      pure_reduce hs s locs (HE_list_concat id1 id2) hs s locs (HE_value HV_trap)
+  | pr_list_concat_trap4:
+    forall hs s locs id1 id2 v2,
+      hs !! id2 = Some v2 ->
+      host_typeof v2 <> Some HT_list ->
+      pure_reduce hs s locs (HE_list_concat id1 id2) hs s locs (HE_value HV_trap)
   | pr_getglobal:
-      forall hs s locs id hv ,
-      (* Upd: ok it does make sense for the lookup result to carry a double Some, since
-           gmap lookup itself returns an option.
-
-         After some thoughts, this double option should be allowing us a way to know that 
-           a memory is actually freed -- so we can distinguish between what we don't know and
-           what we know to be non-existent.
-
-         Also, the error message from the Lookup typeclass doesn't point to a specific line.. *)
+    forall hs s locs id hv ,
       hs !! id = Some hv ->
       pure_reduce hs s locs (HE_getglobal id) hs s locs (HE_value hv)
   | pr_getglobal_trap:
@@ -1801,6 +1855,82 @@ Proof.
         lia.
 Qed.
 
+Lemma he_binop_reducible op id1 id2 hs ws locs:
+  @reducible wasm_lang (HE_binop op id1 id2) (hs, ws, locs).
+Proof.
+  apply hs_red_equiv.
+  destruct (hs !! id1) as [v1|] eqn:Hv1; last by eapply pr_binop_trap2 in Hv1; repeat eexists.
+  destruct (hs !! id2) as [v2|] eqn:Hv2; last by eapply pr_binop_trap3 in Hv2; repeat eexists.
+  destruct (host_value_to_wasm v1) as [wv1|] eqn:Hwv1 => //=; last by eapply pr_binop_trap4 in Hwv1; repeat eexists.
+  destruct (host_value_to_wasm v2) as [wv2|] eqn:Hwv2 => //=; last by eapply pr_binop_trap5 in Hwv2; repeat eexists.
+  unfold host_value_to_wasm in Hwv1, Hwv2.
+  destruct v1, v2 => //.
+  inversion Hwv1; subst; clear Hwv1.
+  inversion Hwv2; subst; clear Hwv2.
+  destruct (app_binop op wv1 wv2) eqn:Hbinop; [eapply pr_binop_success in Hbinop | eapply pr_binop_trap1 in Hbinop] => //; by repeat eexists.
+Qed.
+  
+Lemma wp_binop s E op v1 v2 v id1 id2:
+  app_binop op v1 v2 = Some v ->
+  {{{ id1 ↦ₕ (HV_wasm_value v1) ∗ id2 ↦ₕ (HV_wasm_value v2) }}} HE_binop op id1 id2 @ s; E {{{ RET (HV_wasm_value v); id1 ↦ₕ (HV_wasm_value v1) ∗ id2 ↦ₕ (HV_wasm_value v2) }}}.
+Proof.
+  move => Hbinop.
+  iIntros (Φ) "[Hv1 Hv2] HΦ".
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs ?]".
+  iDestruct (gen_heap_valid with "Hhs Hv1") as "%Hv1".
+  iDestruct (gen_heap_valid with "Hhs Hv2") as "%Hv2".
+  iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    by apply he_binop_reducible.
+  - iIntros "!>" (e2 σ2 efs HStep) "!>".
+    inv_head_step; iFrame; try iSplit => //.
+    + iApply ("HΦ" with "[Hv1 Hv2]"); by iFrame.
+    + by rewrite Hv1 in H11.
+    + by rewrite Hv2 in H11.
+Qed.
+
+Lemma he_list_concat_reducible id1 id2 hs ws locs:
+  @reducible wasm_lang (HE_list_concat id1 id2) (hs, ws, locs).
+Proof.
+  apply hs_red_equiv.
+  destruct (hs !! id1) as [v1|] eqn:Hv1; last by eapply pr_list_concat_trap1 in Hv1; repeat eexists.
+  destruct (hs !! id2) as [v2|] eqn:Hv2; last by eapply pr_list_concat_trap2 in Hv2; repeat eexists.
+  destruct (host_typeof v1) as [t1|] eqn:Ht1 => //=; try destruct t1; try by eapply pr_list_concat_trap3 in Hv1; repeat eexists => //; rewrite Ht1.
+  destruct (host_typeof v2) as [t2|] eqn:Ht2 => //=; try destruct t2; try by eapply pr_list_concat_trap4 in Hv2; repeat eexists => //; rewrite Ht2.
+  destruct v1, v2 => //.
+  repeat eexists.
+  by eapply pr_list_concat.
+Qed.
+
+Lemma wp_list_concat s E l1 l2 id1 id2:
+  {{{ id1 ↦ₕ (HV_list l1) ∗ id2 ↦ₕ (HV_list l2) }}} HE_list_concat id1 id2 @ s; E {{{ RET (HV_list (l1 ++ l2)); id1 ↦ₕ (HV_list l1) ∗ id2 ↦ₕ (HV_list l2) }}}.
+Proof.
+  iIntros (Φ) "[Hv1 Hv2] HΦ".
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[Hhs ?]".
+  iDestruct (gen_heap_valid with "Hhs Hv1") as "%Hv1".
+  iDestruct (gen_heap_valid with "Hhs Hv2") as "%Hv2".
+  iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    by apply he_list_concat_reducible.
+  - iIntros "!>" (e2 σ2 efs HStep) "!>".
+    inv_head_step; iFrame; try iSplit => //.
+    + iApply ("HΦ" with "[Hv1 Hv2]"); by iFrame.
+    + by rewrite Hv1 in H10.
+    + by rewrite Hv2 in H10.
+Qed.
+ 
 (*
   | rs_unop : forall v op t,
     reduce_simple [::AI_basic (BI_const v); AI_basic (BI_unop t op)] [::AI_basic (BI_const (@app_unop op v))]
