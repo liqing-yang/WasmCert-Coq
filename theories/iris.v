@@ -511,8 +511,12 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
     forall hs s locs vs,      
       pure_reduce hs s locs (HE_wasm_frame (v_to_e_list vs)) hs s locs (HE_value (HV_list (fmap (fun wv => (HV_wasm_value wv)) vs)))
   | pr_wasm_return_trap:
-      forall hs s locs,
+    forall hs s locs,
       pure_reduce hs s locs (HE_wasm_frame ([::AI_trap])) hs s locs (HE_value (HV_trap))
+  | pr_wasm_frame:
+    forall hs s locs we hs' s' we',
+      wasm_reduce hs s empty_frame we hs' s' empty_frame we' ->
+      pure_reduce hs s locs (HE_wasm_frame we) hs' s' locs (HE_wasm_frame we')
   | pr_host_return:
     forall hs s locsf locs ids e vs tn,
       list_extra.those (fmap (fun id => hs !! id) ids) = Some vs ->
@@ -1930,14 +1934,43 @@ Proof.
     + by rewrite Hv1 in H10.
     + by rewrite Hv2 in H10.
 Qed.
- 
-(*
-  | rs_unop : forall v op t,
-    reduce_simple [::AI_basic (BI_const v); AI_basic (BI_unop t op)] [::AI_basic (BI_const (@app_unop op v))]
-                   
-*)
-Lemma wp_wasm_rs_unop: True.
+
+Axiom wasm_reduce_deterministic: forall hs s f we hs1 s1 f1 we1 hs2 s2 f2 we2,
+  wasm_reduce hs s f we hs1 s1 f1 we1 ->
+  wasm_reduce hs s f we hs2 s2 f2 we2 ->
+  (hs1, s1, f1, we1) = (hs2, s2, f2, we2).
+
+Lemma wp_wasm_reduce_simple s E we we' Φ:
+  reduce_simple we we' ->
+  □WP HE_wasm_frame we' @ s; E {{ Φ }} ⊢
+  WP HE_wasm_frame we @ s; E {{ Φ }}.
 Proof.
+  move => HReduce.
+  iIntros "#Hwp".
+  iApply wp_lift_pure_step_no_fork.
+  - move => σ1.
+    destruct s => //.
+    apply hs_red_equiv.
+    destruct σ1 as [[hs ws] locs].
+    repeat eexists.
+    apply pr_wasm_frame.
+    by apply wr_simple.
+  - move => κ σ1 e2 σ2 efs HStep.
+    inv_head_step => //.
+    repeat split => //.
+    f_equal.
+    assert ((hs', s', empty_frame, we'0) = (hs, s0, empty_frame, we')) as HDet.
+    { eapply wasm_reduce_deterministic => //.
+      by apply wr_simple. }
+    by inversion HDet.
+  - iIntros "!>!>!>" (κ e2 efs σ HStep).
+    inv_head_step.
+    + admit.
+    + admit.
+    + replace we' with we'0; first by iAssumption.
+      eapply wr_simple in HReduce.
+      eapply wasm_reduce_deterministic in H4 => //.
+      by inversion H4.
 Admitted.
 
 End lifting.
