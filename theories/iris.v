@@ -19,7 +19,7 @@ From iris.base_logic.lib Require Import gen_heap proph_map gen_inv_heap.
 From iris.program_logic Require Import weakestpre total_weakestpre.
 From iris.program_logic Require Export language lifting.
 
-Require Export common operations_iris datatypes_iris datatypes_properties_iris.
+Require Export common operations_iris datatypes_iris datatypes_properties_iris properties_iris.
 Require Import iris_locations.
 
 Definition iris_expr := host_expr.
@@ -1940,7 +1940,29 @@ Axiom wasm_reduce_deterministic: forall hs s f we hs1 s1 f1 we1 hs2 s2 f2 we2,
   wasm_reduce hs s f we hs2 s2 f2 we2 ->
   (hs1, s1, f1, we1) = (hs2, s2, f2, we2).
 
-Lemma wp_wasm_reduce_simple s E we we' Φ:
+Lemma v_to_e_list_irreducible: forall vs we,
+  ¬ reduce_simple (v_to_e_list vs) we.
+Proof.
+  move => vs we HContra.
+  inversion HContra; try do 5 (destruct vs => //); subst.
+  - admit. (* TODO: resolve these using some tactics in the old interpreter soundness proof *)
+  - admit.
+  - apply lfilled_Ind_Equivalent in H0.
+    inversion H0; subst; clear H0.
+    admit.
+Admitted.
+
+Lemma trap_irreducible: forall we,
+  ¬ reduce_simple ([::AI_trap]) we.
+Proof.
+  move => we HContra.
+  inversion HContra; try do 5 (destruct vs => //).
+  subst.
+  apply lfilled_Ind_Equivalent in H0.
+  by inversion H0.
+Qed.
+  
+Lemma wp_wasm_reduce_simple_det s E we we' Φ:
   reduce_simple we we' ->
   □WP HE_wasm_frame we' @ s; E {{ Φ }} ⊢
   WP HE_wasm_frame we @ s; E {{ Φ }}.
@@ -1965,12 +1987,91 @@ Proof.
     by inversion HDet.
   - iIntros "!>!>!>" (κ e2 efs σ HStep).
     inv_head_step.
-    + admit.
-    + admit.
+    + by apply v_to_e_list_irreducible in HReduce.
+    + by apply trap_irreducible in HReduce.
     + replace we' with we'0; first by iAssumption.
       eapply wr_simple in HReduce.
       eapply wasm_reduce_deterministic in H4 => //.
       by inversion H4.
-Admitted.
+Qed.
 
+(*
+| wr_call :
+   forall s f i a hs,
+     f.(f_inst).(inst_funcs) !! i = Some a ->
+     wasm_reduce hs s f [::AI_basic (BI_call i)] hs s f [::AI_invoke a]
+*)
+Lemma wp_wasm_call: True.
+Admitted.
+(*
+  | wr_invoke_native :
+      forall a cl t1s t2s ts es ves vcs n m k zs s f f' i hs,
+        s.(s_funcs) !! a = Some cl ->
+        cl = FC_func_native i (Tf t1s t2s) ts es ->
+        ves = v_to_e_list vcs ->
+        length vcs = n ->
+        length ts = k ->
+        length t1s = n ->
+        length t2s = m ->
+        n_zeros ts = zs ->
+        f'.(f_inst) = i ->
+        f'.(f_locs) = vcs ++ zs ->
+        wasm_reduce hs s f (ves ++ [::AI_invoke a]) hs s f [::AI_local m f' [::AI_basic (BI_block (Tf [::] t2s) es)]]
+ *)
+
+Lemma wr_wasm_invoke_native s E a inst t1s t2s ts es ves vcs zs m Q v:
+  ves = v_to_e_list vcs ->
+  length vcs = length t1s ->
+  length t2s = m ->
+  n_zeros ts = zs ->
+  {{{ N.of_nat a ↦₁ FC_func_native inst (Tf t1s t2s) ts es }}} (HE_wasm_frame ([::AI_local m (Build_frame (vcs ++ zs) inst) [::AI_basic (BI_block (Tf [::] t2s) es)]])) @ s; E {{{ RET v; Q }}} ⊢
+  {{{ N.of_nat a ↦₁ FC_func_native inst (Tf t1s t2s) ts es }}} (HE_wasm_frame (ves ++ [::AI_invoke a])) @ s; E {{{ RET v; Q }}}.
+Proof.
+  move => Hves HLen1 HLen2 Hnzero.
+  iIntros "#Hprem" (Φ) "!> Hf HΦ".
+  iApply wp_lift_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iDestruct "Hσ" as "[? [? [Hwf ?]]]".
+  iDestruct (gen_heap_valid with "Hwf Hf") as "%Hfuncref".
+  rewrite gmap_of_list_lookup in Hfuncref.
+  rewrite Nat2N.id in Hfuncref.
+  iApply fupd_mask_intro; first by set_solver.
+  iIntros "Hfupd".
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    apply pr_wasm_frame.
+    by eapply wr_invoke_native with (f' := Build_frame (vcs ++ zs) inst); eauto => //.
+  - iIntros "!>" (e2 σ2 efs HStep).
+    iMod "Hfupd".
+    iModIntro.
+    destruct σ2 as [[hs' ws'] locs'] => //=.
+    inv_head_step; iFrame.
+    + admit.
+    + admit.
+    + inversion H4; subst; clear H4 => //=; try do 5 (destruct vcs => //=).
+      * admit.
+      * admit.
+      * admit. (* The correct case *)
+      * apply lfilled_Ind_Equivalent in H0.
+        admit.
+Admitted.
+(*
+  | wr_invoke_host :
+    (* TODO: check *)
+    forall a cl e tf t1s t2s ves vcs m n s s' f hs hs' vs,
+      s.(s_funcs) !! a = Some cl ->
+      cl = FC_func_host tf n e ->
+      tf = Tf t1s t2s ->
+      ves = v_to_e_list vcs ->
+      length vcs = n ->
+      length t1s = n ->
+      length t2s = m ->
+      (* TODO: check if this is what we want *)
+      fmap (fun x => HV_wasm_value x) vcs = vs ->
+      wasm_reduce hs s f (ves ++ [::AI_invoke a]) hs' s' f [::AI_host_frame t1s vs e]
+*)
 End lifting.
