@@ -1940,18 +1940,64 @@ Axiom wasm_reduce_deterministic: forall hs s f we hs1 s1 f1 we1 hs2 s2 f2 we2,
   wasm_reduce hs s f we hs2 s2 f2 we2 ->
   (hs1, s1, f1, we1) = (hs2, s2, f2, we2).
 
+Open Scope SEQ.
+(*
+  A bit ugly that we have to do these. Also it's worth note that we now have 3 different 
+    list libraries: Coq.List, stdpp, and seq (ssreflect).
+*)
+Lemma cat_split {T: Type} (l1 l2 l: list T):
+  l1 ++ l2 = l ->
+  l1 = seq.take (length l1) l /\
+  l2 = seq.drop (length l1) l.
+Proof.
+  move => HCat.
+  rewrite - HCat.
+  repeat rewrite length_is_size.
+  rewrite take_size_cat => //.
+  by rewrite drop_size_cat => //.
+Qed.
+  
+Lemma v_to_e_split: forall vs l1 l2,
+  l1 ++ l2 = v_to_e_list vs ->
+  l1 = v_to_e_list (seq.take (length l1) vs) /\
+  l2 = v_to_e_list (seq.drop (length l1) vs).
+Proof.
+  move => vs l1 l2 H.
+  apply cat_split in H.
+  destruct H as [H1 H2].
+  rewrite v_to_e_take.
+  rewrite v_to_e_drop => //.
+Qed.
+  
+Lemma v_to_e_const2: forall vs l,
+  l = v_to_e_list vs ->
+  ¬ const_list l -> False.
+Proof.
+  move => vs l H HContra. subst.
+  apply HContra.
+  by apply v_to_e_is_const_list.
+Qed.
+
+Ltac resolve_v_to_e:=
+  match goal with
+  | H: _ ++ _ = v_to_e_list _ |- False =>
+    let Hl1 := fresh "Hl1" in
+    let Hl2 := fresh "Hl2" in
+    apply v_to_e_split in H;
+    destruct H as [Hl1 Hl2];
+    try apply v_to_e_const2 in Hl1 => //; try apply v_to_e_const2 in Hl2 => //
+  end.
+
 Lemma v_to_e_list_irreducible: forall vs we,
   ¬ reduce_simple (v_to_e_list vs) we.
 Proof.
   move => vs we HContra.
-  inversion HContra; try do 5 (destruct vs => //); subst.
-  - admit. (* TODO: resolve these using some tactics in the old interpreter soundness proof *)
-  - admit.
+  inversion HContra; try do 5 (destruct vs => //); subst; try resolve_v_to_e.
   - apply lfilled_Ind_Equivalent in H0.
     inversion H0; subst; clear H0.
-    admit.
-Admitted.
-
+    by resolve_v_to_e.
+Qed.
+    
 Lemma trap_irreducible: forall we,
   ¬ reduce_simple ([::AI_trap]) we.
 Proof.
@@ -2050,14 +2096,17 @@ Proof.
     iModIntro.
     destruct σ2 as [[hs' ws'] locs'] => //=.
     inv_head_step; iFrame.
-    + admit.
-    + admit.
+    + exfalso. symmetry in H4. by resolve_v_to_e.
+    + by destruct vcs => //.
     + inversion H4; subst; clear H4 => //=; try do 5 (destruct vcs => //=).
-      * admit.
-      * admit.
+      * admit. (* never happens *)
       * admit. (* The correct case *)
+      * apply concat_cancel_last in H.
+        destruct H.
+        inversion H1; subst; clear H1.
+        by rewrite Hfuncref in H0.
       * apply lfilled_Ind_Equivalent in H0.
-        admit.
+        admit. (* never happens *)
 Admitted.
 (*
   | wr_invoke_host :
