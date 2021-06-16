@@ -762,7 +762,7 @@ Class wfuncG Σ := WFuncG {
 
 Class wtabG Σ := WTabG {
   tab_invG : invG Σ;
-  tab_gen_hsG :> gen_heapG N tableinst Σ;
+  tab_gen_hsG :> gen_heapG (N*N) funcelem Σ;
 }.
 
 Class wmemG Σ := WMemG {
@@ -783,7 +783,7 @@ Instance heapG_irisG `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wmemG Σ, !wgl
     ((gen_heap_interp hs) ∗
       (gen_heap_interp (gmap_of_list locs)) ∗
       (gen_heap_interp (gmap_of_list s.(s_funcs))) ∗
-      (gen_heap_interp (gmap_of_list s.(s_tables))) ∗
+      (gen_heap_interp (gmap_of_table s.(s_tables))) ∗
       (gen_heap_interp (gmap_of_mem s.(s_mems))) ∗
       (gen_heap_interp (gmap_of_list s.(s_globals)))
     )%I;
@@ -813,14 +813,14 @@ Notation "n ↦₁{ q } v" := (mapsto (L:=N) (V:=function_closure) n q v%V)
                            (at level 20, q at level 5, format "n ↦₁{ q } v") : bi_scope.
 Notation "n ↦₁ v" := (mapsto (L:=N) (V:=function_closure) n (DfracOwn 1) v%V)
                       (at level 20, format "n ↦₁ v") : bi_scope.
-Notation "n ↦₂{ q } v" := (mapsto (L:=N) (V:=tableinst) n q v%V)
-                           (at level 20, q at level 5, format "n ↦₂{ q } v") : bi_scope.
-Notation "n ↦₂ v" := (mapsto (L:=N) (V:=tableinst) n (DfracOwn 1) v%V)
-                      (at level 20, format "n ↦₂ v") : bi_scope.
-Notation "n [ i ] ↦₃{ q } v" := (mapsto (L:=N*N) (V:=byte) (n, i) q v%V)
-                           (at level 20, q at level 5, format "n [ i ] ↦₃{ q } v") : bi_scope.
-Notation "n [ i ] ↦₃ v" := (mapsto (L:=N*N) (V:=byte) (n, i) (DfracOwn 1) v%V)
-                           (at level 20, format "n [ i ] ↦₃ v") : bi_scope.
+Notation "n ↦₂{ q } [ i ] v" := (mapsto (L:=N*N) (V:=funcelem) (n, i) q v%V)
+                           (at level 20, q at level 5, format "n ↦₂{ q } [ i ] v") : bi_scope.
+Notation "n ↦₂[ i ] v" := (mapsto (L:=N*N) (V:=funcelem) (n, i) (DfracOwn 1) v%V)
+                      (at level 20, format "n ↦₂[ i ] v") : bi_scope.
+Notation "n ↦₃{ q } [ i ] v" := (mapsto (L:=N*N) (V:=byte) (n, i) q v%V)
+                           (at level 20, q at level 5, format "n ↦₃{ q } [ i ] v") : bi_scope.
+Notation "n ↦₃[ i ] v" := (mapsto (L:=N*N) (V:=byte) (n, i) (DfracOwn 1) v% V)
+                           (at level 20, format "n ↦₃[ i ] v") : bi_scope.
 Notation "n ↦₄{ q } v" := (mapsto (L:=N) (V:=global) n q v%V)
                            (at level 20, q at level 5, format "n  ↦₄{ q } v") : bi_scope.
 Notation "n ↦₄ v" := (mapsto (L:=N) (V:=global) n (DfracOwn 1) v%V)
@@ -1869,11 +1869,14 @@ Qed.
       pure_reduce hs s locs (HE_wasm_table_create len) hs s' locs (HE_value (HV_wov (WOV_tableref (Mk_tableidx n))))
  *)
 
+Definition new_table_gmap_at_n (n: N) (len: nat) : gmap (N*N) funcelem:=
+  list_to_map (imap (fun i x => ((n, N.of_nat i), x)) (repeat None len)).
+
 Lemma wp_table_create len s E:
   ⊢
   (WP HE_wasm_table_create len @ s; E
   {{ fun v => match v with
-           | HV_wov (WOV_tableref (Mk_tableidx n)) => N.of_nat n ↦₂ create_table len
+           | HV_wov (WOV_tableref (Mk_tableidx n)) => ∀ (i:N), ⌜ (i < len)%N ⌝ -∗ N.of_nat n ↦₂[ i ] None
            | _ => False
            end
   }})%I.
@@ -1894,18 +1897,35 @@ Proof.
     iIntros (e2 σ2 efs HStep).
     destruct σ2 as [[hs2 ws2] locs2].
     inv_head_step.
-    iMod (gen_heap_alloc with "Hwt") as "(Hσ & Hl & Hm)".
+    (* gen_heap_alloc_big allocates a chunk of heap at once, which is exactly what we need here. *)
+    iMod (gen_heap_alloc_big with "Hwt") as "(Hwt & Hl & Hm)".
     {
-      instantiate (1 := N.of_nat (length ws.(s_tables))).
-      rewrite gmap_of_list_lookup.
-      rewrite Nat2N.id.
-      by rewrite lookup_ge_None.
+      instantiate (1 := new_table_gmap_at_n (N.of_nat (length ws.(s_tables))) (N.to_nat len)).
+      apply map_disjoint_spec.
+      move => [n i] f1 f2 H1 H2.
+      unfold new_table_gmap_at_n in H1.
+      resolve_finmap.
+      - unfold gmap_of_table in H2.
+        rewrite gmap_of_list_2d_lookup in H2.
+        clear Helem.
+        rewrite Nat2N.id in H2.
+        destruct (_ !! length _ ) eqn: HContra => //. clear H2.
+        assert (Some l = None) => //.
+        rewrite - HContra. clear HContra.
+        apply lookup_ge_None.
+        rewrite fmap_length.
+        lia.
+      - apply Nat2N.inj in H1. subst.
+        rewrite Helem0 in Helem.
+        by inversion Helem.
+      - apply nodup_imap_inj1.
+        move => n1 n2 t1 t2 Heq.
+        inversion Heq.
+        by apply Nat2N.inj in H1.
     }
     iModIntro.
     iFrame.
-    by rewrite - gmap_of_list_append. 
-Qed.
-  
+Admitted.  
 (*
   | pr_table_set:
     forall hs s locs idt n id v tn tab tab' s' fn,
@@ -1998,6 +2018,47 @@ Qed.
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := s.(s_mems) ++ [::create_memory sz sz_lim]; s_globals := s.(s_globals) |} ->
       n = length s.(s_mems) ->
       pure_reduce hs s locs (HE_wasm_memory_create sz sz_lim) hs s' locs (HE_value (HV_wov (WOV_memoryref (Mk_memidx n))))
+   *)
+
+Print create_memory.
+
+Lemma wp_memory_create sz sz_lim s E:
+  ⊢
+  (WP HE_wasm_memory_create sz sz_lim @ s; E
+  {{ fun v => match v with
+           | HV_wov (WOV_memoryref (Mk_memidx n)) => ∀ i, ⌜ i < N.to_nat sz ⌝ -∗ ((N.of_nat n) [ i ] ↦₃ (create_memory sz sz_lim))
+           | _ => False
+           end
+  }})%I.
+Proof.
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[?[?[? [Hwt ?]]]]".
+  iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    by eapply pr_table_create.
+  - iModIntro.
+    iIntros (e2 σ2 efs HStep).
+    destruct σ2 as [[hs2 ws2] locs2].
+    inv_head_step.
+    iMod (gen_heap_alloc with "Hwt") as "(Hσ & Hl & Hm)".
+    {
+      instantiate (1 := N.of_nat (length ws.(s_tables))).
+      rewrite gmap_of_list_lookup.
+      rewrite Nat2N.id.
+      by rewrite lookup_ge_None.
+    }
+    iModIntro.
+    iFrame.
+    by rewrite - gmap_of_list_append. 
+Qed.
+(*  
   | pr_memory_set:
     forall hs s locs idm n id md' mn m m' s' b,
       hs !! idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
@@ -2007,6 +2068,7 @@ Qed.
       m' = {|mem_data := md'; mem_max_opt := m.(mem_max_opt) |} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := list_insert mn m' s.(s_mems); s_globals := s.(s_globals) |} ->
       pure_reduce hs s locs (HE_wasm_memory_set idm n id) hs s' locs (HE_value (HV_byte b))
+
   | pr_memory_get:
     forall hs s locs idm n b m mn,
       hs !! idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->

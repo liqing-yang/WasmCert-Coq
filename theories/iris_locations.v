@@ -108,6 +108,12 @@ Definition memory_to_list (m: memory) : list byte :=
 Definition gmap_of_mem (l: list memory) : gmap (N*N) byte :=
   gmap_of_list_2d (fmap memory_to_list l).
 
+Definition table_to_list (tab: tableinst) : list funcelem :=
+  tab.(table_data).
+
+Definition gmap_of_table (l: list tableinst) : gmap (N*N) funcelem :=
+  gmap_of_list_2d (fmap table_to_list l).
+
 Lemma gmap_of_list_lookup {T: Type} (l: list T) n:
   (gmap_of_list l) !! n = l !! (N.to_nat n).
 Proof with resolve_finmap.
@@ -174,7 +180,51 @@ Proof with resolve_finmap.
       rewrite app_length in Hlookup; simpl in Hlookup.
       lia.
 Qed.
-  
+
+Lemma flatten_2d_list_lookup {T: Type} (l: list (list T)) n i t:
+  (n, i, t) ∈ flatten_2d_list l <->
+  match l !! (N.to_nat n) with
+  | Some l' => l' !! (N.to_nat i)
+  | None => None
+  end = Some t.
+Proof.
+Admitted.
+
+Lemma flatten_2d_list_inj12 {T: Type} (l: list (list T)) x1 x2 p t1 t2:
+  flatten_2d_list l !! x1 = Some (p, t1) ->
+  flatten_2d_list l !! x2 = Some (p, t2) ->
+  t1 = t2.
+Proof.
+Admitted.
+
+Lemma flatten_2d_list_nodup {T: Type} (l: list (list T)):
+  NoDup (flatten_2d_list l).
+Proof.
+Admitted.
+
+Lemma gmap_of_list_2d_lookup {T: Type} (l: list (list T)) n i:
+  (gmap_of_list_2d l) !! (n, i) = match l !! (N.to_nat n) with
+                                  | Some l' => l' !! (N.to_nat i)
+                                  | None => None
+                                  end.
+Proof with resolve_finmap.
+  unfold gmap_of_list_2d, flatten_2d_list.
+  remember_lookup.
+  destruct lookup_res...
+  - symmetry. apply flatten_2d_list_lookup.
+    by apply elem_of_list_lookup; eexists.
+  - by eapply flatten_2d_list_inj12.
+  - fold (flatten_2d_list l).
+    by apply flatten_2d_list_nodup.
+  - destruct (l !! (N.to_nat n)) eqn: Hlookup => //.
+    destruct (l0 !! (N.to_nat i)) eqn: Hlookup2 => //.
+    exfalso. apply H2. clear H2.
+    apply elem_of_list_fmap.
+    exists (n, i, t). split => //.
+    apply flatten_2d_list_lookup.
+    by rewrite Hlookup Hlookup2.
+Qed.
+
 (* Old
 Inductive loc : Type :=
   | loc_host_var: id -> loc
