@@ -1872,6 +1872,197 @@ Qed.
 Definition new_table_gmap_at_n (n: N) (len: nat) : gmap (N*N) funcelem:=
   list_to_map (imap (fun i x => ((n, N.of_nat i), x)) (repeat None len)).
 
+Lemma repeat_lookup {T: Type} (x: T) (n i: nat):
+  i < n <->
+  (repeat x n) !! i = Some x.
+Proof.
+  split. 
+  - move : n.
+    induction i; move => n HLen; destruct n => //=; try lia.
+    apply IHi.
+    lia.
+  - move => Hlookup.
+    apply lookup_lt_Some in Hlookup.
+    by rewrite repeat_length in Hlookup.
+Qed.
+
+Lemma new_table_gmap_at_n_lookup n i len:
+  (i<len)%N ->
+  new_table_gmap_at_n n (N.to_nat len) !! (n, i) = Some None.
+Proof.
+  move => HLen.
+  unfold new_table_gmap_at_n.
+  apply elem_of_list_to_map; resolve_finmap.
+  - apply Nat2N.inj in H0. subst.
+    rewrite Helem0 in Helem.
+    by inversion Helem.
+  - apply nodup_imap_inj1.
+    move => n1 n2 t1 t2 Heq.
+    inversion Heq.
+    by apply Nat2N.inj in H0.
+  - apply elem_of_lookup_imap.
+    exists (N.to_nat i), None.
+    split.
+    + repeat f_equal.
+      lia.
+    + apply repeat_lookup.
+      lia.
+Qed.
+      
+Lemma new_table_gmap_at_n_lookup_None n i len:
+  (i>=len)%N ->
+  new_table_gmap_at_n n (N.to_nat len) !! (n, i) = None.
+Proof.
+  move => HLen.
+  unfold new_table_gmap_at_n.
+  apply not_elem_of_list_to_map. move => HContra. resolve_finmap. subst => //=.
+  inversion Heq; subst; clear Heq.
+  apply lookup_lt_Some in Helem0.
+  rewrite repeat_length in Helem0.
+  lia.
+Qed.
+  
+Lemma new_table_gmap_at_n_lookup_None2 n m i len:
+  n <> m ->
+  new_table_gmap_at_n n (N.to_nat len) !! (m, i) = None.
+Proof.
+  move => Hneq.
+  unfold new_table_gmap_at_n.
+  apply not_elem_of_list_to_map. move => HContra. resolve_finmap. subst => //=.
+  by inversion Heq.
+Qed.
+  
+Lemma gmap_of_table_append_disjoint tab len:
+  new_table_gmap_at_n (N.of_nat (length tab)) (N.to_nat len) ##ₘ gmap_of_table tab.
+Proof.
+  apply map_disjoint_spec.
+  move => [n i] f1 f2 H1 H2.
+  unfold new_table_gmap_at_n in H1.
+  resolve_finmap.
+  - unfold gmap_of_table in H2.
+    rewrite gmap_of_list_2d_lookup in H2.
+    clear Helem.
+    rewrite Nat2N.id in H2.
+    destruct (_ !! length _ ) eqn: HContra => //. clear H2.
+    assert (Some l = None) => //.
+    rewrite - HContra. clear HContra.
+    apply lookup_ge_None.
+    rewrite fmap_length.
+    lia.
+  - apply Nat2N.inj in H1. subst.
+    rewrite Helem0 in Helem.
+    by inversion Helem.
+  - apply nodup_imap_inj1.
+    move => n1 n2 t1 t2 Heq.
+    inversion Heq.
+    by apply Nat2N.inj in H1.
+Qed.
+    
+Lemma gmap_of_table_append l len:
+  gmap_of_table (l ++ [::create_table len]) =
+  new_table_gmap_at_n (N.of_nat (length l)) (N.to_nat len) ∪ gmap_of_table l.
+Proof.
+  apply map_eq.
+  move => [n i].
+  unfold gmap_of_table.
+  remember_lookup; rewrite gmap_of_list_2d_lookup in Hlookup.
+  destruct lookup_res => //=.
+  - destruct (_ !! N.to_nat n) eqn:Hlookup2 => //.
+    assert (N.to_nat n <= length l) as Hlen.
+    {
+      apply lookup_lt_Some in Hlookup2.
+      rewrite fmap_length app_length in Hlookup2.
+      simpl in Hlookup2.
+      lia.
+    }
+    destruct (decide (N.to_nat n = length l)) => //.
+    + rewrite e in Hlookup2.
+      rewrite list_lookup_fmap in Hlookup2.
+      rewrite lookup_app_r in Hlookup2; last lia.
+      replace (length l - length l) with 0 in Hlookup2; last lia.
+      simpl in Hlookup2.
+      inversion Hlookup2; subst; clear Hlookup2.
+      assert (N.to_nat i < N.to_nat len).
+      { apply lookup_lt_Some in Hlookup.
+        by rewrite repeat_length in Hlookup.
+      }
+      apply elem_of_list_lookup_2 in Hlookup.
+      apply elem_of_list_In in Hlookup.
+      apply repeat_spec in Hlookup. subst.
+      symmetry.
+      apply lookup_union_Some_l.
+      rewrite - e.
+      rewrite N2Nat.id.
+      apply new_table_gmap_at_n_lookup.
+      lia.
+    + assert (N.to_nat n < length l) as Hlenlt; first lia.
+      symmetry.
+      apply lookup_union_Some_r; first by apply gmap_of_table_append_disjoint.
+      rewrite gmap_of_list_2d_lookup.
+      rewrite list_lookup_fmap in Hlookup2.
+      rewrite list_lookup_fmap.
+      rewrite lookup_app_l in Hlookup2; last lia.
+      by rewrite Hlookup2.
+  - destruct (_ !! N.to_nat n) eqn:Hlookup2 => //.
+    + assert (N.to_nat n <= length l) as Hlen.
+      {
+        apply lookup_lt_Some in Hlookup2.
+        rewrite fmap_length app_length in Hlookup2.
+        simpl in Hlookup2.
+        lia.
+      }
+      destruct (decide (N.to_nat n = length l)) => //.
+      * rewrite e in Hlookup2.
+        rewrite list_lookup_fmap in Hlookup2.
+        rewrite lookup_app_r in Hlookup2; last lia.
+        replace (length l - length l) with 0 in Hlookup2; last lia.
+        simpl in Hlookup2.
+        inversion Hlookup2; subst; clear Hlookup2.
+        assert (N.to_nat i >= N.to_nat len).
+        { apply lookup_ge_None in Hlookup.
+          by rewrite repeat_length in Hlookup.
+        }
+        symmetry.
+        apply lookup_union_None.
+        split.
+        -- rewrite - e.
+          rewrite N2Nat.id.
+          apply new_table_gmap_at_n_lookup_None.
+          lia.
+        -- rewrite gmap_of_list_2d_lookup.
+          rewrite list_lookup_fmap.
+          assert (N.to_nat n ≥ length l) as Hlen2; first lia.
+          apply lookup_ge_None in Hlen2.
+          by rewrite Hlen2.
+      * assert (N.to_nat n < length l) as Hlenlt; first lia.
+        symmetry.
+        apply lookup_union_None.
+        split.
+        -- rewrite new_table_gmap_at_n_lookup_None2 => //.
+          lia.
+        -- rewrite gmap_of_list_2d_lookup.
+          rewrite list_lookup_fmap in Hlookup2.
+          rewrite lookup_app_l in Hlookup2; last lia.
+          by rewrite list_lookup_fmap Hlookup2.
+    + clear Hlookup.
+      rewrite list_lookup_fmap in Hlookup2.
+      destruct (_ !! N.to_nat n) eqn:Hlookup => //.
+      clear Hlookup2.
+      apply lookup_ge_None in Hlookup.
+      rewrite app_length in Hlookup.
+      simpl in Hlookup.
+      symmetry.
+      apply lookup_union_None.
+      split.
+      * apply new_table_gmap_at_n_lookup_None2 => //.
+        lia.
+      * rewrite gmap_of_list_2d_lookup.
+        rewrite list_lookup_fmap.
+        assert (N.to_nat n >= length l) as Hlen; first lia.
+        apply lookup_ge_None in Hlen.
+        by rewrite Hlen.
+Qed.
+        
 Lemma wp_table_create len s E:
   ⊢
   (WP HE_wasm_table_create len @ s; E
@@ -1897,7 +2088,16 @@ Proof.
     iIntros (e2 σ2 efs HStep).
     destruct σ2 as [[hs2 ws2] locs2].
     inv_head_step.
-    (* gen_heap_alloc_big allocates a chunk of heap at once, which is exactly what we need here. *)
+    (* gen_heap_alloc_big allocates a chunk of heap at once, which is exactly what we need here.
+
+       https://gitlab.mpi-sws.org/iris/iris/-/blob/master/iris/base_logic/lib/gen_heap.v
+
+       We actually also get a 'meta_token' when allocating fresh resources in the heap, meaning
+       that 'no meta data has been associated with the namespaces in the mask for the location'.
+       Whatever that means, it does not seem to be needed here.
+
+    *)
+    
     iMod (gen_heap_alloc_big with "Hwt") as "(Hwt & Hl & Hm)".
     {
       instantiate (1 := new_table_gmap_at_n (N.of_nat (length ws.(s_tables))) (N.to_nat len)).
@@ -1925,7 +2125,16 @@ Proof.
     }
     iModIntro.
     iFrame.
-Admitted.  
+    iSplitL "Hwt".
+    + by rewrite gmap_of_table_append.
+    + iSplit => //.
+      iIntros (i) "%H".
+      (* This is the correct usage of premises with big_sepM [∗ map] like this. Add a bit more
+         comments in the future -- this will surely be forgotten in the future. *)
+      iDestruct (big_sepM_lookup with "Hl") as "Hni" => //.
+      by apply new_table_gmap_at_n_lookup.
+Qed.
+
 (*
   | pr_table_set:
     forall hs s locs idt n id v tn tab tab' s' fn,

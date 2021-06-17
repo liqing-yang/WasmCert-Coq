@@ -2,7 +2,7 @@
 (* (C) J. Pichon, M. Bodin - see LICENSE.txt *)
 
 From Wasm Require Import common memory_list.
-From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
+From mathcomp Require Import ssreflect ssrnat ssrfun ssrbool eqtype seq.
 From compcert Require lib.Floats.
 From Wasm Require Export datatypes_properties_iris list_extra.
 From Coq Require Import BinNat.
@@ -164,7 +164,7 @@ Fixpoint to_bytelist (l: seq host_value) : option (seq byte) :=
   end.
 
 Definition create_table (len: N) : tableinst :=
-  Build_tableinst (List.repeat None len) (Some len).
+  Build_tableinst (List.repeat None (N.to_nat len)) (Some len).
 
 Definition create_memory (sz: N) (sz_lim: N) :=
   Build_memory (mem_make #00 sz) (Some sz_lim).
