@@ -1872,6 +1872,9 @@ Qed.
 Definition new_table_gmap_at_n (n: N) (len: nat) : gmap (N*N) funcelem:=
   list_to_map (imap (fun i x => ((n, N.of_nat i), x)) (repeat None len)).
 
+Definition new_memory_gmap_at_n (n: N) (len: nat) : gmap (N*N) byte:=
+  list_to_map (imap (fun i x => ((n, N.of_nat i), x)) (repeat #00 len)).
+
 Lemma repeat_lookup {T: Type} (x: T) (n i: nat):
   i < n <->
   (repeat x n) !! i = Some x.
@@ -1940,6 +1943,32 @@ Proof.
   unfold new_table_gmap_at_n in H1.
   resolve_finmap.
   - unfold gmap_of_table in H2.
+    rewrite gmap_of_list_2d_lookup in H2.
+    clear Helem.
+    rewrite Nat2N.id in H2.
+    destruct (_ !! length _ ) eqn: HContra => //. clear H2.
+    assert (Some l = None) => //.
+    rewrite - HContra. clear HContra.
+    apply lookup_ge_None.
+    rewrite fmap_length.
+    lia.
+  - apply Nat2N.inj in H1. subst.
+    rewrite Helem0 in Helem.
+    by inversion Helem.
+  - apply nodup_imap_inj1.
+    move => n1 n2 t1 t2 Heq.
+    inversion Heq.
+    by apply Nat2N.inj in H1.
+Qed.
+
+Lemma gmap_of_memory_append_disjoint mem len:
+  new_memory_gmap_at_n (N.of_nat (length mem)) (N.to_nat len) ##ₘ gmap_of_mem mem.
+Proof.
+  apply map_disjoint_spec.
+  move => [n i] f1 f2 H1 H2.
+  unfold new_memory_gmap_at_n in H1.
+  resolve_finmap.
+  - unfold gmap_of_mem in H2.
     rewrite gmap_of_list_2d_lookup in H2.
     clear Helem.
     rewrite Nat2N.id in H2.
@@ -2062,7 +2091,40 @@ Proof.
         apply lookup_ge_None in Hlen.
         by rewrite Hlen.
 Qed.
-        
+
+Lemma gmap_of_table_insert n i x l t:
+  l !! n = Some t ->
+  i < length t.(table_data) ->
+  <[(N.of_nat n,N.of_nat i) := x]> (gmap_of_table l) = gmap_of_table (<[n := {|table_data := (<[i := x]> t.(table_data)); table_max_opt := t.(table_max_opt)|}]> l).
+Proof.
+  move => HLookup HLen.
+  apply map_eq.
+  move => [m j].
+  unfold gmap_of_table.
+  remember_lookup. rewrite gmap_of_list_2d_lookup. symmetry.
+  destruct (decide ((N.of_nat n, N.of_nat i) = (m,j))).
+  - inversion e; subst; clear e.
+    repeat rewrite Nat2N.id.
+    rewrite lookup_insert.
+    rewrite list_lookup_fmap => //.
+    rewrite list_lookup_insert => /=; last by apply lookup_lt_Some in HLookup.
+    by rewrite list_lookup_insert.
+  - rewrite lookup_insert_ne in Hlookup => //.
+    rewrite list_lookup_fmap.
+    destruct (decide (n = N.to_nat m)); subst.
+    + rewrite list_lookup_insert => /=; last by apply lookup_lt_Some in HLookup.
+      destruct (decide (i = N.to_nat j)).
+      * exfalso. apply n0. subst.
+        by repeat rewrite N2Nat.id.
+      * rewrite list_lookup_insert_ne => //=.
+        rewrite gmap_of_list_2d_lookup.
+        rewrite list_lookup_fmap.
+        by rewrite HLookup.
+    + rewrite list_lookup_insert_ne => //=.
+      rewrite gmap_of_list_2d_lookup.
+      by rewrite list_lookup_fmap.
+Qed.
+      
 Lemma wp_table_create len s E:
   ⊢
   (WP HE_wasm_table_create len @ s; E
@@ -2097,31 +2159,10 @@ Proof.
        Whatever that means, it does not seem to be needed here.
 
     *)
-    
     iMod (gen_heap_alloc_big with "Hwt") as "(Hwt & Hl & Hm)".
     {
       instantiate (1 := new_table_gmap_at_n (N.of_nat (length ws.(s_tables))) (N.to_nat len)).
-      apply map_disjoint_spec.
-      move => [n i] f1 f2 H1 H2.
-      unfold new_table_gmap_at_n in H1.
-      resolve_finmap.
-      - unfold gmap_of_table in H2.
-        rewrite gmap_of_list_2d_lookup in H2.
-        clear Helem.
-        rewrite Nat2N.id in H2.
-        destruct (_ !! length _ ) eqn: HContra => //. clear H2.
-        assert (Some l = None) => //.
-        rewrite - HContra. clear HContra.
-        apply lookup_ge_None.
-        rewrite fmap_length.
-        lia.
-      - apply Nat2N.inj in H1. subst.
-        rewrite Helem0 in Helem.
-        by inversion Helem.
-      - apply nodup_imap_inj1.
-        move => n1 n2 t1 t2 Heq.
-        inversion Heq.
-        by apply Nat2N.inj in H1.
+      by apply gmap_of_table_append_disjoint.
     }
     iModIntro.
     iFrame.
@@ -2135,6 +2176,28 @@ Proof.
       by apply new_table_gmap_at_n_lookup.
 Qed.
 
+Ltac simplify_lookup :=
+  repeat match goal with
+  | H: gmap_of_table _ !! _ = _ |- _ =>
+       unfold gmap_of_table in H
+  | H: gmap_of_mem _ !! _ = _ |- _ =>
+       unfold gmap_of_mem in H
+  | H: gmap_of_list_2d _ !! _ = _ |- _ =>
+       rewrite gmap_of_list_2d_lookup in H
+  | H: gmap_of_list_lookup _ !! _ = _ |- _ =>
+       rewrite gmap_of_list_lookup in H
+  | H: match ?term with
+       | Some _ => _
+       | None => None
+       end = Some _ |- _ =>
+       let Heq := fresh "Heq" in
+       destruct term eqn: Heq => //
+  | H: context C [N.of_nat (N.to_nat _)] |- _ =>
+    rewrite N2Nat.id in H
+  | H: context C [N.to_nat (N.of_nat _)] |- _ =>
+    rewrite Nat2N.id in H
+  end.
+
 (*
   | pr_table_set:
     forall hs s locs idt n id v tn tab tab' s' fn,
@@ -2146,42 +2209,41 @@ Qed.
       s' = {|s_funcs := s.(s_funcs); s_tables := list_insert tn tab' s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) |} ->
       pure_reduce hs s locs (HE_wasm_table_set idt (N_of_nat n) id) hs s' locs (HE_value v)
  *)
-Lemma wp_table_set s E idt n id fn tn tab tab':
-  N.to_nat n < length tab.(table_data) ->
-  tab' = {|table_data := <[(N.to_nat n) := Some fn]> tab.(table_data); table_max_opt := tab.(table_max_opt) |} ->
-  {{{ id ↦ₕ (HV_wov (WOV_funcref (Mk_funcidx fn))) ∗ idt ↦ₕ (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦₂ tab }}} HE_wasm_table_set idt n id @ s; E {{{ RET (HV_wov (WOV_funcref (Mk_funcidx fn))); id ↦ₕ (HV_wov (WOV_funcref (Mk_funcidx fn))) ∗ idt ↦ₕ (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦₂ tab' }}}.
+Lemma wp_table_set s E idt n id f fn tn:
+  {{{ id ↦ₕ (HV_wov (WOV_funcref (Mk_funcidx fn))) ∗ idt ↦ₕ (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦₂[ n ] f }}} HE_wasm_table_set idt n id @ s; E {{{ RET (HV_wov (WOV_funcref (Mk_funcidx fn))); id ↦ₕ (HV_wov (WOV_funcref (Mk_funcidx fn))) ∗ idt ↦ₕ (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦₂[ n ] (Some fn) }}}.
 Proof.
-  move => HLen HNewtab.
-  iIntros (Φ) "[Hfuncref [Htableref Htable]] HΦ".
+  iIntros (Φ) "[Hfuncref [Htableref Hfunc]] HΦ".
   iApply wp_lift_atomic_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
   iDestruct "Hσ" as "[Hhs [? [? [Hwt ?]]]]".
   iDestruct (gen_heap_valid with "Hhs Hfuncref") as "%Hfuncref".
   iDestruct (gen_heap_valid with "Hhs Htableref") as "%Htableref".
-  iDestruct (gen_heap_valid with "Hwt Htable") as "%Htable".
-  rewrite gmap_of_list_lookup in Htable.
-  rewrite Nat2N.id in Htable.
+  iDestruct (gen_heap_valid with "Hwt Hfunc") as "%Hfunc".
+  simplify_lookup.
+  rewrite list_lookup_fmap in Heq.
+  destruct (s_tables _ !! _) eqn:Hlookup => //.
+  simpl in Heq. inversion Heq. subst. clear Heq.
   iModIntro.
   iSplit.
   - iPureIntro.
     destruct s => //.
     apply hs_red_equiv.
     repeat eexists.
-    by eapply pr_table_set.
+    eapply pr_table_set => //.
+    unfold table_to_list in Hfunc.
+    by apply lookup_lt_Some in Hfunc.
   - iIntros "!>" (e2 σ2 efs HStep).
     inv_head_step.
-    iMod (gen_heap_update with "Hwt Htable") as "[Hwt Htable]".
+    iMod (gen_heap_update with "Hwt Hfunc") as "[Hwt Hfunc]".
     iModIntro.
     iFrame.
-    rewrite - gmap_of_list_insert.
-    + rewrite Nat2N.id.
-      iSplitL "Hwt" => //.
-      iSplitL => //.
-      iApply "HΦ".
-      by iFrame.
-    + rewrite Nat2N.id.
-      by apply lookup_lt_Some in Htable.
+    rewrite - gmap_of_table_insert => //.
+    rewrite N2Nat.id.
+    iFrame.
+    iSplitL => //.
+    iApply ("HΦ" with "[Hfuncref Htableref Hfunc]").
+    by iFrame.
 Qed.
   
 (*
@@ -2192,20 +2254,21 @@ Qed.
       tab.(table_data) !! n = Some (Some fn) ->
       pure_reduce hs s locs (HE_wasm_table_get idt (N_of_nat n)) hs s locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx fn))))
  *)
-Lemma wp_table_get s E idt n fn tn tab:
-  tab.(table_data) !! (N.to_nat n) = Some (Some fn) ->
-  {{{ idt ↦ₕ (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦₂ tab }}} HE_wasm_table_get idt n @ s; E {{{ RET (HV_wov (WOV_funcref (Mk_funcidx fn))); idt ↦ₕ (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦₂ tab }}}.
+Lemma wp_table_get s E id n fn tn:
+  {{{ id ↦ₕ (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦₂[ n ] (Some fn) }}} HE_wasm_table_get id n @ s; E {{{ RET (HV_wov (WOV_funcref (Mk_funcidx fn))); id ↦ₕ (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦₂[ n ] (Some fn) }}}.
 Proof.
-  move => Hfuncref.
-  iIntros (Φ) "[Htableref Htable] HΦ".
+  iIntros (Φ) "[Htableref Hfunc] HΦ".
   iApply wp_lift_atomic_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
   iDestruct "Hσ" as "[Hhs [? [? [Hwt ?]]]]".
   iDestruct (gen_heap_valid with "Hhs Htableref") as "%Htableref".
-  iDestruct (gen_heap_valid with "Hwt Htable") as "%Htable".
-  rewrite gmap_of_list_lookup in Htable.
-  rewrite Nat2N.id in Htable.
+  iDestruct (gen_heap_valid with "Hwt Hfunc") as "%Hfunc".
+  simplify_lookup.
+  rewrite list_lookup_fmap in Heq.
+  destruct (s_tables _ !! _) eqn:Hlookup => //.
+  simpl in Heq.
+  inversion Heq; subst; clear Heq.
   iModIntro.
   iSplit.
   - iPureIntro.
@@ -2229,13 +2292,11 @@ Qed.
       pure_reduce hs s locs (HE_wasm_memory_create sz sz_lim) hs s' locs (HE_value (HV_wov (WOV_memoryref (Mk_memidx n))))
    *)
 
-Print create_memory.
-
 Lemma wp_memory_create sz sz_lim s E:
   ⊢
   (WP HE_wasm_memory_create sz sz_lim @ s; E
   {{ fun v => match v with
-           | HV_wov (WOV_memoryref (Mk_memidx n)) => ∀ i, ⌜ i < N.to_nat sz ⌝ -∗ ((N.of_nat n) [ i ] ↦₃ (create_memory sz sz_lim))
+           | HV_wov (WOV_memoryref (Mk_memidx n)) => ∀ (i:N), ⌜ (i < sz)%N ⌝ -∗ N.of_nat n ↦₃[ i ] #00
            | _ => False
            end
   }})%I.
@@ -2244,29 +2305,32 @@ Proof.
   iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
-  iDestruct "Hσ" as "[?[?[? [Hwt ?]]]]".
+  iDestruct "Hσ" as "[?[?[? [? [Hwm ?]]]]]".
   iModIntro.
   iSplit.
   - iPureIntro.
     destruct s => //.
     apply hs_red_equiv.
     repeat eexists.
-    by eapply pr_table_create.
+    by eapply pr_memory_create.
   - iModIntro.
     iIntros (e2 σ2 efs HStep).
     destruct σ2 as [[hs2 ws2] locs2].
     inv_head_step.
-    iMod (gen_heap_alloc with "Hwt") as "(Hσ & Hl & Hm)".
+    iMod (gen_heap_alloc_big with "Hwm") as "(Hwm & Hl & Hm)".
     {
-      instantiate (1 := N.of_nat (length ws.(s_tables))).
-      rewrite gmap_of_list_lookup.
-      rewrite Nat2N.id.
-      by rewrite lookup_ge_None.
+      instantiate (1 := new_memory_gmap_at_n (N.of_nat (length ws.(s_mems))) (N.to_nat sz)).
+      by apply gmap_of_memory_append_disjoint.
     }
     iModIntro.
     iFrame.
-    by rewrite - gmap_of_list_append. 
-Qed.
+    iSplitL "Hwm".
+    + admit.
+    + iSplit => //.
+      iIntros (i) "%H".
+      iDestruct (big_sepM_lookup with "Hl") as "Hni" => //.
+      admit.
+Admitted.
 (*  
   | pr_memory_set:
     forall hs s locs idm n id md' mn m m' s' b,
