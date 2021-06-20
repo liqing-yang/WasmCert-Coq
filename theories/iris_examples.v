@@ -24,10 +24,11 @@ Definition store42 := list_byte_of_string "store42".
 
 Notation "A ;;; B" := (HE_seq A B) (at level 2).
 Notation "A ::= B" := (HE_setglobal A B) (at level 5).
-
+(*
 Definition Program1 :=
   10 ::= 
   10 ::= (HE_new_rec [::(store11, )])
 
 Lemma example1:
+*)
   
