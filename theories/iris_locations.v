@@ -485,18 +485,45 @@ Proof.
   by rewrite HLookup.
 Qed.
 
-Lemma gmap_of_memory_insert n i x l m:
+Lemma insert_take_drop {T: Type} i (l: list T) (x: T):
+  i < length l ->
+  <[i := x]> l = seq.take i l ++ [::x] ++ seq.drop (i+1) l.  
+Proof.
+  move: i. induction l => //=; move => i HLen; first lia.
+  destruct i => //=; f_equal.
+  - by rewrite drop0.
+  - assert (i < length l) as H; first lia.
+    apply IHl in H.
+    by rewrite H.
+Qed.
+    
+Lemma gmap_of_memory_insert n i x l m md':
   l !! (N.to_nat n) = Some m ->
   N.to_nat i < length m.(mem_data).(memory_list.ml_data) ->
-  <[(n, i) := x]> (gmap_of_memory l) = gmap_of_memory (<[ N.to_nat n := {| mem_data := {| memory_list.ml_init := m.(mem_data).(memory_list.ml_init); memory_list.ml_data := <[(N.to_nat i) := x]> m.(mem_data).(memory_list.ml_data) |}; mem_max_opt := m.(mem_max_opt)|} ]> l).
+  memory_list.mem_update i x m.(mem_data) = Some md' ->
+  <[(n, i) := x]> (gmap_of_memory l) = gmap_of_memory (<[ N.to_nat n := {| mem_data := md'; mem_max_opt := m.(mem_max_opt)|} ]> l).
 Proof.
   unfold gmap_of_memory.
-  move => HLookup HLen.
+  move => HLookup HLen Hmemupd.
+  unfold memory_list.mem_update in Hmemupd.
+  destruct (i <? _)%N eqn:HiLen => //; clear HiLen.
+  inversion Hmemupd; subst; clear Hmemupd => /=.
   rewrite list_fmap_insert => /=.
-  apply gmap_of_list_2d_insert; last lia.
-  rewrite list_lookup_fmap.
-  by rewrite HLookup.
+  erewrite gmap_of_list_2d_insert; eauto.
+  + repeat f_equal.
+    unfold memory_to_list => /=.
+    by apply insert_take_drop.
+  + rewrite list_lookup_fmap.
+    by rewrite HLookup.
 Qed.
+
+Lemma nth_error_lookup {T: Type} (l: list T) i:
+  nth_error l i = l !! i.
+Proof.
+  move: i.
+  by induction l; move => i; destruct i => //=.
+Qed.
+  
 
 (* Old
 Inductive loc : Type :=

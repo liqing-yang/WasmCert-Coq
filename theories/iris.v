@@ -2030,6 +2030,7 @@ Proof.
     iApply "HΦ".
     by iFrame.
 Qed.
+
   (*
   | pr_memory_create:
     forall hs s locs s' sz sz_lim n,
@@ -2078,6 +2079,7 @@ Proof.
       rewrite new_2d_gmap_at_n_lookup => //.
       lia.
 Qed.
+
 (*  
   | pr_memory_set:
     forall hs s locs idm n id md' mn m m' s' b,
@@ -2088,13 +2090,99 @@ Qed.
       m' = {|mem_data := md'; mem_max_opt := m.(mem_max_opt) |} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := list_insert mn m' s.(s_mems); s_globals := s.(s_globals) |} ->
       pure_reduce hs s locs (HE_wasm_memory_set idm n id) hs s' locs (HE_value (HV_byte b))
+ *)
+Lemma wp_memory_set s E idm n id mn sb b:
+  {{{ id ↦ₕ (HV_byte b) ∗ idm ↦ₕ (HV_wov (WOV_memoryref (Mk_memidx mn))) ∗ (N.of_nat mn) ↦₃[ n ] sb }}} HE_wasm_memory_set idm n id @ s; E {{{ RET (HV_byte b); id ↦ₕ (HV_byte b) ∗ idm ↦ₕ (HV_wov (WOV_memoryref (Mk_memidx mn))) ∗ (N.of_nat mn) ↦₃[ n ] b }}}.
+Proof.
+  iIntros (Φ) "[Hbyte [Hmemref Hmembyte]] HΦ".
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iDestruct "Hσ" as "[Hhs [? [? [? [Hwm ?]]]]]".
+  iDestruct (gen_heap_valid with "Hhs Hbyte") as "%Hbyte".
+  iDestruct (gen_heap_valid with "Hhs Hmemref") as "%Hmemref".
+  iDestruct (gen_heap_valid with "Hwm Hmembyte") as "%Hmembyte".
+  simplify_lookup.
+  rewrite list_lookup_fmap in Heq.
+  destruct (s_mems _ !! _) eqn:Hlookup => //.
+  simpl in Heq. inversion Heq. subst. clear Heq.
+  iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    eapply pr_memory_set => //.
+    unfold memory_to_list in Hmembyte.
+    unfold memory_list.mem_update => /=.
+    destruct (n <? _)%N eqn:HLen => //.
+    apply lookup_lt_Some in Hmembyte.
+    exfalso.
+    apply N.ltb_nlt in HLen.
+    lia.
+  - iIntros "!>" (e2 σ2 efs HStep).
+    inv_head_step.
+    iMod (gen_heap_update with "Hwm Hmembyte") as "[Hwm Hmembyte]".
+    iModIntro.
+    iFrame.
+    erewrite gmap_of_memory_insert => //=.
+    + unfold memory_list.mem_update in H10.
+      rewrite Nat2N.id.
+      iFrame.
+      iSplitL => //.
+      iApply ("HΦ" with "[Hbyte Hmemref Hmembyte]").
+      by iFrame.
+    + by rewrite Nat2N.id.
+    + apply lookup_lt_Some in Hmembyte.
+      by unfold memory_to_list in Hmembyte.
+Qed.
 
+(*
   | pr_memory_get:
     forall hs s locs idm n b m mn,
       hs !! idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
       s.(s_mems) !! mn = Some m ->
       memory_list.mem_lookup n m.(mem_data) = Some b ->
       pure_reduce hs s locs (HE_wasm_memory_get idm n) hs s locs (HE_value (HV_byte b))
+ *)
+Lemma wp_memory_get s E n id mn b:
+  {{{ id ↦ₕ (HV_wov (WOV_memoryref (Mk_memidx mn))) ∗ (N.of_nat mn) ↦₃[ n ] b }}} HE_wasm_memory_get id n @ s; E {{{ RET (HV_byte b); id ↦ₕ (HV_wov (WOV_memoryref (Mk_memidx mn))) ∗ (N.of_nat mn) ↦₃[ n ] b }}}.
+Proof.
+  iIntros (Φ) "[Hmemoryref Hbyte] HΦ".
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iDestruct "Hσ" as "[Hhs [? [? [? [Hwm ?]]]]]".
+  iDestruct (gen_heap_valid with "Hhs Hmemoryref") as "%Hmemoryref".
+  iDestruct (gen_heap_valid with "Hwm Hbyte") as "%Hbyte".
+  simplify_lookup.
+  rewrite list_lookup_fmap in Heq.
+  destruct (s_mems _ !! _) eqn:Hlookup => //.
+  simpl in Heq.
+  inversion Heq; subst; clear Heq.
+  iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    eapply pr_memory_get; eauto.
+    unfold memory_list.mem_lookup.
+    by rewrite nth_error_lookup.
+  - iIntros "!>" (e2 σ2 efs HStep).
+    inv_head_step.
+    iModIntro.
+    iFrame.
+    iSplitL => //.
+    unfold memory_list.mem_lookup in H12.
+    rewrite nth_error_lookup in H12.
+    unfold memory_to_list in Hbyte.
+    rewrite H12 in Hbyte.
+    inversion Hbyte; subst; clear Hbyte.
+    iApply "HΦ".
+    by iFrame.
+Qed.
+(*
   | pr_memory_grow:
     forall hs s s' locs idm n m m' mn,
       hs !! idm = Some (HV_wov (WOV_memoryref (Mk_memidx mn))) ->
