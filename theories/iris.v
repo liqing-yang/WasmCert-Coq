@@ -2193,68 +2193,13 @@ Qed.
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := list_insert mn m' s.(s_mems); s_globals := s.(s_globals) |} ->
       pure_reduce hs s locs (HE_wasm_memory_grow idm n) hs s' locs (HE_value (HV_wasm_value (VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_N (mem_size m'))))))
  *)
-
-Axiom mem_length_divisible: forall m,
-  (((mem_length m) `div` page_size) * page_size)%N = mem_length m.
-
-Lemma mem_grow_size m n m':
-  mem_grow m n = Some m' ->
-  mem_size m' = (mem_size m + n)%N.
-Proof.
-  unfold mem_grow, mem_size, mem_length, memory_list.mem_length => //=.
-  move => H.
-  destruct (mem_max_opt m) in H => //=.
-  - destruct (_ <=? n0)%N => //=.
-    inversion H; subst; clear H => //=.
-    rewrite app_length.
-    rewrite repeat_length.
-    rewrite Nat2N.inj_add.
-    rewrite N2Nat.id.
-    (* lia doesn't resolve (a+b*c)/c to a/c+b, because N does not have this lemma on the right
-       side... *)
-    rewrite N.add_comm.
-    rewrite N.div_add_l => //.
-    lia.
-  - inversion H; subst; clear H => //=.
-    rewrite app_length.
-    rewrite repeat_length.
-    rewrite Nat2N.inj_add.
-    rewrite N2Nat.id.
-    rewrite N.add_comm.
-    rewrite N.div_add_l => //.
-    lia.
-Qed.
-
-Definition mem_grow_appendix (m:memory) (mn: nat) (n:N) : gmap (N*N) byte := list_to_map (imap (fun i x => ((N.of_nat mn, ((N.of_nat i) + (mem_size m) * page_size)%N), x)) (repeat #00 (N.to_nat (n * page_size)))).
-
-Lemma gmap_of_memory_grow m n m' mn mems:
-  mem_grow m n = Some m' ->
-  (mem_grow_appendix m mn n) ∪ gmap_of_memory mems =
-  gmap_of_memory (<[ mn := m' ]> mems).
-Proof.
-  move => Hmemgrow.
-  apply map_eq.
-  move => [i j].
-  unfold gmap_of_memory, mem_grow_appendix.
-  rewrite gmap_of_list_2d_lookup.
-  rewrite list_lookup_fmap.
-  destruct (_ !! N.to_nat i) eqn:Hmemlookup => //=.
-  assert (N.to_nat i < length mems) as HLen.
-  {
-    apply lookup_lt_Some in Hmemlookup.
-    by rewrite insert_length in Hmemlookup.
-  }
-  - destruct (decide (mn = N.to_nat i)); subst.
-    + rewrite list_lookup_insert in Hmemlookup => //.
-      inversion Hmemlookup; subst; clear Hmemlookup => //=.
-Admitted.
-
+      
 Lemma wp_memory_grow s E idm mn n:
   idm ↦ₕ (HV_wov (WOV_memoryref (Mk_memidx mn)))
   ⊢
   (WP HE_wasm_memory_grow idm n @ s; E
   {{ fun v => match v with
-           | HV_wasm_value (VAL_int32 v') => ∃ (new_sz:N), (⌜ v' = Wasm_int.int_of_Z i32m (Z.of_N new_sz) ⌝ ∗ ∀ (i:N), ⌜ (i < new_sz * page_size)%N ⌝ -∗ ⌜ ((i + n * page_size)%N >= new_sz * page_size)%N ⌝  -∗ (N.of_nat mn) ↦₃[ i ] #00)
+           | HV_wasm_value (VAL_int32 v') => ∃ (new_sz:N) (init_b: byte), (⌜ v' = Wasm_int.int_of_Z i32m (Z.of_N new_sz) ⌝ ∗ ∀ (i:N), ⌜ (i < new_sz * page_size)%N ⌝ -∗ ⌜ ((i + n * page_size)%N >= new_sz * page_size)%N ⌝  -∗ (N.of_nat mn) ↦₃[ i ] init_b)
            | HV_trap => True
            | _ => False     
            end
@@ -2277,39 +2222,15 @@ Proof.
     iMod (gen_heap_alloc_big with "Hwm") as "[Hwm [Hmembytes Htoken]]".
     {
       instantiate (1 := mem_grow_appendix m mn n).
-      unfold mem_grow_appendix.
-      apply map_disjoint_spec.
-      move => [i j] x y Hlookup1 Hlookup2.
-      unfold gmap_of_memory in Hlookup2.
-      resolve_finmap.
-      + rewrite gmap_of_list_2d_lookup in Hlookup2.
-        rewrite Nat2N.id in Hlookup2.
-        destruct ((_ <$> _) !! mn) eqn: HContra => //.
-        rewrite list_lookup_fmap in HContra.
-        rewrite H3 in HContra.
-        simpl in HContra.
-        inversion HContra; subst; clear HContra.
-        assert (Some y = None) => //.
-        rewrite - Hlookup2. clear Hlookup2.
-        apply lookup_ge_None.
-        unfold memory_to_list, mem_size.
-        rewrite mem_length_divisible.
-        unfold mem_length, memory_list.mem_length.
-        lia.
-      + assert (x1 = x3); first lia.
-        subst.
-        rewrite Helem0 in Helem.
-        by inversion Helem.
-      + apply nodup_imap_inj1.
-        move => n1 n2 t1 t2 Heq.
-        inversion Heq.
-        lia.
+      eapply mem_grow_appendix_disjoint; eauto.
+      by eapply lookup_lt_Some.
     }
     iModIntro. iFrame.
     iSplitL "Hwm".
-    + by erewrite gmap_of_memory_grow.
+    + erewrite gmap_of_memory_grow; eauto.
+      by eapply lookup_lt_Some.
     + iSplit => //.
-      iExists (mem_size m').
+      iExists (mem_size m'), m.(mem_data).(memory_list.ml_init).
       iSplit => //.
       iIntros (i) "%Hub %Hlb".
       iDestruct (big_sepM_lookup with "Hmembytes") as "Hni" => //.
@@ -2323,15 +2244,21 @@ Proof.
         inversion Heq.
         lia.
       * apply elem_of_lookup_imap.
-        exists (N.to_nat (N.sub i (mem_size m * page_size))), #00.
-        apply mem_grow_size in H7.
+        exists (N.to_nat (N.sub i (mem_size m * page_size))), m.(mem_data).(memory_list.ml_init).
+        apply mem_grow_length in H7.
+        unfold mem_size in Hlb.
+        rewrite mem_length_divisible in Hlb.
         rewrite H7 in Hlb.
-        assert (i >= (mem_size m * page_size))%N; first lia.
+        assert (i >= mem_length m)%N; first lia.
+        unfold mem_size.
+        rewrite mem_length_divisible.
         split => //.
         -- repeat f_equal.
            rewrite N2Nat.id.
            lia.
         -- apply repeat_lookup.
+           unfold mem_size in Hub.
+           rewrite mem_length_divisible in Hub.
            lia.          
 Qed.
 (*

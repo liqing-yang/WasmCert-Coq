@@ -524,6 +524,159 @@ Proof.
   by induction l; move => i; destruct i => //=.
 Qed.
   
+Axiom mem_length_divisible: forall m,
+  (((mem_length m) `div` page_size) * page_size)%N = mem_length m.
+
+Lemma mem_grow_data m n m':
+  mem_grow m n = Some m' ->
+  m'.(mem_data).(memory_list.ml_data) = (m.(mem_data).(memory_list.ml_data) ++ (repeat (m.(mem_data).(memory_list.ml_init)) (N.to_nat (n*page_size))))%SEQ.
+Proof.
+  unfold mem_grow, mem_size, mem_length, memory_list.mem_length => //=.
+  move => H.
+  destruct (mem_max_opt m) in H => //=.
+  - destruct (_ <=? n0)%N => //=.
+    by inversion H; subst.
+  - by inversion H.
+Qed.
+
+Lemma mem_grow_length m n m':
+  mem_grow m n = Some m' ->
+  mem_length m' = (mem_length m + n * page_size)%N.
+Proof.
+  move => H.
+  apply mem_grow_data in H.
+  unfold mem_size, mem_length, memory_list.mem_length.
+  rewrite H.
+  rewrite app_length repeat_length.
+  by rewrite Nat2N.inj_add N2Nat.id.
+Qed.
+
+Definition mem_grow_appendix (m:memory) (mn: nat) (n:N) : gmap (N*N) byte := list_to_map (imap (fun i x => ((N.of_nat mn, ((N.of_nat i) + (mem_size m) * page_size)%N), x)) (repeat (m.(mem_data).(memory_list.ml_init)) (N.to_nat (n * page_size)))).
+
+Lemma mem_grow_appendix_disjoint m n mn m' mems:
+  mn < length mems ->
+  mems !! mn = Some m ->
+  mem_grow m n = Some m' ->
+  (mem_grow_appendix m mn n) ##ₘ gmap_of_memory mems.
+Proof.
+  move => HLen Hmem Hmemgrow.
+  unfold mem_grow_appendix.
+  apply map_disjoint_spec.
+  move => [i j] x y Hlookup1 Hlookup2.
+  unfold gmap_of_memory in Hlookup2.
+  resolve_finmap.
+  - rewrite gmap_of_list_2d_lookup in Hlookup2.
+    rewrite Nat2N.id in Hlookup2.
+    destruct ((_ <$> _) !! mn) eqn: HContra => //.
+    rewrite list_lookup_fmap in HContra.
+    rewrite Hmem in HContra.
+    simpl in HContra.
+    inversion HContra; subst; clear HContra.
+    assert (Some y = None) => //.
+    rewrite - Hlookup2. clear Hlookup2.
+    apply lookup_ge_None.
+    unfold memory_to_list, mem_size.
+    rewrite mem_length_divisible.
+    unfold mem_length, memory_list.mem_length.
+    lia.
+  - assert (x1 = x3); first lia.
+    subst.
+    rewrite Helem0 in Helem.
+    by inversion Helem.
+  - apply nodup_imap_inj1.
+    move => n1 n2 t1 t2 Heq.
+    inversion Heq.
+    lia.
+Qed.
+    
+Lemma gmap_of_memory_grow m n m' mn mems:
+  mn < length mems ->
+  mems !! mn = Some m ->
+  mem_grow m n = Some m' ->
+  (mem_grow_appendix m mn n) ∪ gmap_of_memory mems =
+  gmap_of_memory (<[ mn := m' ]> mems).
+Proof.
+  move => Hlen Hmemlookup Hmemgrow.
+  remember (mem_grow_length Hmemgrow) as Hmemlen; clear HeqHmemlen.
+  unfold mem_length, memory_list.mem_length in Hmemlen.
+  remember (mem_grow_data Hmemgrow) as Hmemgrowdata; clear HeqHmemgrowdata.
+  apply map_eq.
+  move => [i j].
+  unfold gmap_of_memory, mem_grow_appendix.
+  rewrite gmap_of_list_2d_lookup.
+  rewrite list_lookup_fmap.
+  unfold memory_to_list.
+  destruct (decide (N.to_nat i = mn)); subst.
+  - rewrite list_lookup_insert => //=.
+    destruct (decide (N.to_nat j < length m.(mem_data).(memory_list.ml_data))).
+    + destruct (_ !! N.to_nat j) eqn:Hl; last by apply lookup_ge_None in Hl; lia.
+      apply lookup_union_Some_r; first by eapply mem_grow_appendix_disjoint.
+      rewrite gmap_of_list_2d_lookup.
+      rewrite list_lookup_fmap.
+      rewrite Hmemlookup => //=.
+      rewrite Hmemgrowdata in Hl.
+      by rewrite lookup_app_l in Hl.
+    + destruct (decide (N.to_nat j < length m'.(mem_data).(memory_list.ml_data))).
+      * destruct (_ !! N.to_nat j) eqn:Hl; last by apply lookup_ge_None in Hl; lia.
+        apply lookup_union_Some_l.
+        apply elem_of_list_to_map; resolve_finmap.
+        -- assert (x0 = x2); first lia.
+           subst.
+           by rewrite Helem0 in Helem; inversion Helem.
+        -- apply nodup_imap_inj1.
+           move => n1 n2 t1 t2 Heq.
+           inversion Heq.
+           lia.
+        -- apply elem_of_lookup_imap.
+           rewrite N2Nat.id.
+           exists (N.to_nat (j - (mem_size m * page_size))%N), b.
+           split.
+           ++ repeat f_equal.
+              rewrite N2Nat.id.
+              unfold mem_size.
+              rewrite mem_length_divisible.
+              unfold mem_length, memory_list.mem_length.
+              lia.
+           ++ rewrite Hmemgrowdata in Hl.
+              rewrite lookup_app_r in Hl; last lia.
+              rewrite - Hl.
+              f_equal.
+              unfold mem_size.
+              rewrite mem_length_divisible.
+              unfold mem_length, memory_list.mem_length.
+              lia.
+      * destruct (_ !! N.to_nat j) eqn:Hl; first by apply lookup_lt_Some in Hl; lia.
+        apply lookup_union_None.
+        split.
+        -- apply not_elem_of_list_to_map.
+           move => HContra.
+           resolve_finmap; subst => //=.
+           inversion Heq; subst; clear Heq.
+           apply lookup_lt_Some in Helem0.
+           rewrite repeat_length in Helem0.
+           apply n1.
+           rewrite N2Nat.inj_add Nat2N.id.
+           apply N2Nat.inj_iff in Hmemlen.
+           rewrite N2Nat.inj_add in Hmemlen.
+           repeat rewrite Nat2N.id in Hmemlen.
+           rewrite Hmemlen.
+           unfold mem_size.
+           rewrite mem_length_divisible.
+           unfold mem_length, memory_list.mem_length.
+           lia.
+        -- rewrite gmap_of_list_2d_lookup list_lookup_fmap Hmemlookup => /=.
+           apply lookup_ge_None.
+           lia.
+  - rewrite list_lookup_insert_ne => //=.
+    rewrite lookup_union_r.
+    + rewrite gmap_of_list_2d_lookup.
+      by rewrite list_lookup_fmap.
+    + apply not_elem_of_list_to_map.
+      move => HContra.
+      resolve_finmap; subst => //=.
+      inversion Heq; subst; clear Heq.
+      lia.
+Qed.
 
 (* Old
 Inductive loc : Type :=
