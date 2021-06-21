@@ -85,6 +85,26 @@ Definition lookup_2d {T: Type} (l: list (list T)) (n: nat) (i: nat) : option T :
 Definition flatten_list {T: Type} (l: list T) : list (N * T) :=
   imap (fun n x => (N.of_nat n, x)) l.
 
+Lemma flatten_list_nodup {T: Type} (l: list T):
+  NoDup (flatten_list l).
+Proof.
+  unfold flatten_list.
+  apply nodup_imap_inj1.
+  intros.
+  inversion H.
+  lia.
+Qed.
+
+Lemma flatten_list_lookup_Some {T: Type} (l: list T) (i: nat) x:
+  l !! i = Some x ->
+  (flatten_list l) !! i = Some (N.of_nat i, x).
+Proof.
+  move => H.
+  unfold flatten_list.
+  rewrite list_lookup_imap.
+  by rewrite H.
+Qed.
+
 Definition gmap_of_list {T: Type} (l: list T) : gmap N T :=
   list_to_map (flatten_list l).
 
@@ -181,6 +201,78 @@ Proof with resolve_finmap.
       lia.
 Qed.
 
+Lemma flatten_2d_list_i_acc_shift_spec {T: Type} (l: list (list T)) (acc: N):
+  flatten_2d_list_i l (acc+1) = (fun x => match x with
+                                            | (n, i, t) => ((n+1)%N, i, t)
+                                            end) <$>
+                                                 (flatten_2d_list_i l acc).
+Proof.
+  move: l acc.
+  induction l => //.
+  move => acc.
+  simpl.
+  rewrite fmap_app.
+  rewrite IHl.
+  f_equal.
+  clear IHl.
+  apply list_eq.
+  move => i.
+  repeat rewrite list_lookup_fmap.
+  destruct (a !! i) eqn:Hl.
+  - apply flatten_list_lookup_Some in Hl.
+    by rewrite Hl.
+  - assert (flatten_list a !! i = None) as H; last by rewrite H.
+    unfold flatten_list.
+    apply lookup_ge_None.
+    apply lookup_ge_None in Hl.
+    by rewrite imap_length.
+Qed.
+  
+Lemma flatten_2d_list_i_acc_shift {T: Type} (l: list (list T)) n i t acc:
+  (N.of_nat (n+1), i, t) ∈ flatten_2d_list_i l (acc+1) <->
+  (N.of_nat n, i, t) ∈ flatten_2d_list_i l acc.
+Proof.
+  rewrite flatten_2d_list_i_acc_shift_spec.
+  rewrite elem_of_list_fmap.
+  split.
+  - move => [[[n' i'] t'] [Heq Helem]].
+    inversion Heq; subst; clear Heq.
+    replace (N.of_nat n) with n' => //.
+    lia.
+  - move => Helem.
+    exists (N.of_nat n, i, t).
+    split => //.
+    repeat f_equal.
+    lia.
+Qed.
+    
+Lemma flatten_2d_list_i_acc_domain1 {T: Type} (l: list (list T)) n i t acc:
+  (n, i, t) ∈ flatten_2d_list_i l acc ->
+  (n >= acc)%N.
+Proof.
+  rewrite - (N2Nat.id n).
+  remember (N.to_nat n) as n0. clear Heqn0 n.
+  rewrite - (N2Nat.id acc).
+  remember (N.to_nat acc) as acc0. clear Heqacc0 acc.
+  move: n0 i t acc0.
+  induction n0 => //; move => i t acc0 Helem.
+  - destruct acc0 => //.
+    replace (N.of_nat (S acc0)) with (N.of_nat acc0 + 1)%N in Helem; last lia.
+    rewrite flatten_2d_list_i_acc_shift_spec in Helem.
+    resolve_finmap.
+    destruct x.
+    destruct p.
+    inversion Heq.
+    lia.
+  - destruct acc0 => //.
+    replace (N.of_nat (S acc0)) with (N.of_nat acc0 + 1)%N in Helem; last lia.
+    assert (N.of_nat n0 >= N.of_nat acc0)%N; last lia.
+    eapply IHn0.
+    apply flatten_2d_list_i_acc_shift.
+    replace (n0+1) with (S n0) => //.
+    lia.
+Qed.
+    
 Lemma flatten_2d_list_lookup {T: Type} (l: list (list T)) n i t:
   (n, i, t) ∈ flatten_2d_list l <->
   match l !! (N.to_nat n) with
@@ -188,20 +280,98 @@ Lemma flatten_2d_list_lookup {T: Type} (l: list (list T)) n i t:
   | None => None
   end = Some t.
 Proof.
-Admitted.
-
+  unfold flatten_2d_list.
+  split.
+  - move: n i t.
+    induction l => //=; move => n i t Helem.
+    + by apply elem_of_nil in Helem.
+    + destruct (N.to_nat n) eqn: Hn => //=.
+      * unfold flatten_list in Helem.
+        assert (n = 0%N); first lia. subst; clear Hn.
+        apply elem_of_app in Helem.
+        destruct Helem as [Helem|Helem]; resolve_finmap; subst.
+        -- inversion Heq. subst.
+          by rewrite Nat2N.id.
+        -- apply elem_of_list_lookup_2 in Helem0.
+          apply flatten_2d_list_i_acc_domain1 in Helem0.
+          lia.
+      * assert (n = N.of_nat (S n0)); first lia; subst; clear Hn.
+        rewrite - (Nat2N.id n0).
+        apply IHl.
+        apply flatten_2d_list_i_acc_shift.
+        apply elem_of_app in Helem.
+        destruct Helem as [Helem|Helem]; resolve_finmap; subst; first by destruct x.
+        apply elem_of_list_lookup_2 in Helem0.
+        replace (N.of_nat (n0+1)) with (N.pos (Pos.of_succ_nat n0)) => //.
+        lia.
+  - move: n i t.
+    induction l => //=; move => n i t Hl.
+    destruct (N.to_nat n) eqn:Hn => //=.
+    + assert (n=0%N); first lia. subst; clear Hn.
+      simpl in Hl.
+      apply elem_of_app; left.
+      apply elem_of_list_fmap.
+      exists (i, t).
+      split => //.
+      unfold flatten_list.
+      apply elem_of_lookup_imap.
+      exists (N.to_nat i), t.
+      split => //.
+      f_equal.
+      lia.
+    + simpl in Hl.
+      replace n with (N.of_nat (n0+1)); last lia.
+      rewrite - (Nat2N.id n0) in Hl.
+      apply IHl in Hl.
+      unfold flatten_list.
+      apply flatten_2d_list_i_acc_shift in Hl.
+      apply elem_of_app; by right.
+Qed.
+      
 Lemma flatten_2d_list_inj12 {T: Type} (l: list (list T)) x1 x2 p t1 t2:
   flatten_2d_list l !! x1 = Some (p, t1) ->
   flatten_2d_list l !! x2 = Some (p, t2) ->
   t1 = t2.
 Proof.
-Admitted.
-
+  destruct p as [n i].
+  move => Hl1 Hl2.
+  apply elem_of_list_lookup_2 in Hl1, Hl2.
+  apply flatten_2d_list_lookup in Hl1, Hl2.
+  rewrite Hl1 in Hl2.
+  by inversion Hl2.
+Qed.
+  
 Lemma flatten_2d_list_nodup {T: Type} (l: list (list T)):
   NoDup (flatten_2d_list l).
 Proof.
-Admitted.
-
+  unfold flatten_2d_list.
+  induction l => //=.
+  - by apply NoDup_nil.
+  - apply NoDup_app => //=.
+    split.
+    + apply NoDup_fmap.
+      * move => x1 x2 Heq.
+        destruct x1, x2.
+        by inversion Heq.
+      * by apply flatten_list_nodup.
+    + split.
+      * move => [[n i] t] Helem.
+        resolve_finmap.
+        destruct x.
+        inversion Heq; subst; clear Heq.
+        move => HContra.
+        apply flatten_2d_list_i_acc_domain1 in HContra.
+        lia.
+      * rewrite flatten_2d_list_i_acc_shift_spec => //.
+        apply NoDup_fmap => //.
+        move => x1 x2 Heq.
+        destruct x1, x2.
+        destruct p, p0.
+        inversion Heq; subst; clear Heq.
+        repeat f_equal.
+        lia.
+Qed.
+        
 Lemma gmap_of_list_2d_lookup {T: Type} (l: list (list T)) n i:
   (gmap_of_list_2d l) !! (n, i) = match l !! (N.to_nat n) with
                                   | Some l' => l' !! (N.to_nat i)
