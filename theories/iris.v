@@ -486,6 +486,7 @@ Inductive pure_reduce : host_state -> store_record -> list host_value -> host_ex
   | pr_global_get:
     forall hs s locs idg g gn v,
       hs !! idg = Some (HV_wov (WOV_globalref (Mk_globalidx gn))) ->
+      s.(s_globals) !! gn = Some g ->
       g.(g_val) = v ->
       pure_reduce hs s locs (HE_wasm_global_get idg) hs s locs (HE_value (HV_wasm_value v))
   (* wasm module expr *)
@@ -2267,6 +2268,48 @@ Qed.
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := s.(s_globals) ++ [::g] |} ->
       n = length s.(s_globals) ->
       pure_reduce hs s locs (HE_wasm_global_create g) hs s' locs (HE_value (HV_wov (WOV_globalref (Mk_globalidx n))))
+ *)
+(*
+  This one is more like new_host_func: we're only creating one item here, unlike table/memory 
+    creation which creates a chunk of items at once.
+*)
+Lemma wp_glocal_create s E g:
+  ⊢
+  (WP HE_wasm_global_create g @ s; E
+  {{ fun v => match v with
+           | HV_wov (WOV_globalref (Mk_globalidx n)) => N.of_nat n ↦₄ g
+           | _ => False
+           end
+  }})%I.
+Proof.
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iSimpl in "Hσ".
+  iDestruct "Hσ" as "[?[?[? [? [? Hwg]]]]]".
+  iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    by apply pr_globals_create.
+  - iModIntro.
+    iIntros (e2 σ2 efs HStep).
+    destruct σ2 as [[hs2 ws2] locs2].
+    inv_head_step.
+    iMod (gen_heap_alloc with "Hwg") as "(Hσ & Hl & Hm)".
+    {
+      instantiate (1 := N.of_nat (length ws.(s_globals))).
+      rewrite gmap_of_list_lookup.
+      rewrite Nat2N.id.
+      by rewrite lookup_ge_None.
+    }
+    iModIntro.
+    iFrame.
+    by rewrite - gmap_of_list_append.
+Qed.    
+(*
   | pr_global_set:
     forall hs s locs gn idg id s' v g g',
       hs !! id = Some (HV_wasm_value v) ->
@@ -2277,12 +2320,85 @@ Qed.
       g' = {|g_mut := MUT_mut; g_val := v|} ->
       s' = {|s_funcs := s.(s_funcs); s_tables := s.(s_tables); s_mems := s.(s_mems); s_globals := list_insert gn g' s.(s_globals)|} ->
       pure_reduce hs s locs (HE_wasm_global_set idg id) hs s' locs (HE_value (HV_wasm_value v))
+ *)
+(*
+  For this to succeed we need not only the full ownership of the global, but the mutability of the
+    targetted global as well.
+*)
+Lemma wp_global_set idg id s E w v gn:
+  w.(g_mut) = MUT_mut ->
+  typeof v = typeof (w.(g_val)) ->
+  {{{ id ↦ₕ HV_wasm_value v ∗ idg ↦ₕ HV_wov (WOV_globalref (Mk_globalidx gn)) ∗ (N.of_nat gn) ↦₄ w }}}
+    HE_wasm_global_set idg id @ s; E
+                                     {{{ RET (HV_wasm_value v); id ↦ₕ HV_wasm_value v ∗ idg ↦ₕ HV_wov (WOV_globalref (Mk_globalidx gn)) ∗ (N.of_nat gn) ↦₄ {|g_mut := MUT_mut; g_val := v|} }}}.
+Proof.
+  move => HMut HType.
+  iIntros (Φ) "[Hwvalue [Hglobalref Hglobal]] HΦ".
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iDestruct "Hσ" as "[Hhs [? [? [? [? Hwg]]]]]".
+  iDestruct (gen_heap_valid with "Hhs Hwvalue") as "%Hwvalue".
+  iDestruct (gen_heap_valid with "Hhs Hglobalref") as "%Hglobalref".
+  iDestruct (gen_heap_valid with "Hwg Hglobal") as "%Hglobal".
+  rewrite gmap_of_list_lookup in Hglobal.
+  rewrite Nat2N.id in Hglobal.
+  iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    by eapply pr_global_set.
+  - iIntros "!>" (e2 σ2 efs HStep).
+    inv_head_step.
+    iMod (gen_heap_update with "Hwg Hglobal") as "[Hwg Hglobal]".
+    iModIntro.
+    iFrame.
+    rewrite - gmap_of_list_insert; last by apply lookup_lt_Some in Hglobal; lia.
+    rewrite Nat2N.id.
+    iFrame.
+    iSplit => //.
+    iApply ("HΦ" with "[Hwvalue Hglobalref Hglobal]").
+    by iFrame.
+Qed.
+
+(*
   | pr_global_get:
     forall hs s locs idg g gn v,
       hs !! idg = Some (HV_wov (WOV_globalref (Mk_globalidx gn))) ->
       g.(g_val) = v ->
       pure_reduce hs s locs (HE_wasm_global_get idg) hs s locs (HE_value (HV_wasm_value v))
  *)
+Lemma wp_global_get idg s E g gn:
+  {{{ idg ↦ₕ HV_wov (WOV_globalref (Mk_globalidx gn)) ∗ (N.of_nat gn) ↦₄ g }}}
+    HE_wasm_global_get idg @ s; E
+  {{{ RET (HV_wasm_value g.(g_val)); idg ↦ₕ HV_wov (WOV_globalref (Mk_globalidx gn)) ∗ (N.of_nat gn) ↦₄ g }}}.
+Proof.
+  iIntros (Φ) "[Hglobalref Hglobal] HΦ".
+  iApply wp_lift_atomic_step => //.
+  iIntros (σ1 ns κ κs nt) "Hσ".
+  destruct σ1 as [[hs ws] locs].
+  iDestruct "Hσ" as "[Hhs [? [? [? [? Hwg]]]]]".
+  iDestruct (gen_heap_valid with "Hhs Hglobalref") as "%Hglobalref".
+  iDestruct (gen_heap_valid with "Hwg Hglobal") as "%Hglobal".
+  rewrite gmap_of_list_lookup in Hglobal.
+  rewrite Nat2N.id in Hglobal.
+  iModIntro.
+  iSplit.
+  - iPureIntro.
+    destruct s => //.
+    apply hs_red_equiv.
+    repeat eexists.
+    by eapply pr_global_get.
+  - iIntros "!>" (e2 σ2 efs HStep).
+    inv_head_step.
+    iModIntro.
+    iFrame.
+    iSplit => //.
+    iApply ("HΦ" with "[Hglobalref Hglobal]").
+    by iFrame.
+Qed.
 
 Lemma he_binop_reducible op id1 id2 hs ws locs:
   @reducible wasm_lang (HE_binop op id1 id2) (hs, ws, locs).
@@ -2360,6 +2476,8 @@ Proof.
     + by rewrite Hv2 in H10.
 Qed.
 
+(* Note that this is not actually true -- memory_grow is allowed to fail non-det. We
+   need a way to deal with that. *)
 Axiom wasm_reduce_deterministic: forall hs s f we hs1 s1 f1 we1 hs2 s2 f2 we2,
   wasm_reduce hs s f we hs1 s1 f1 we1 ->
   wasm_reduce hs s f we hs2 s2 f2 we2 ->
