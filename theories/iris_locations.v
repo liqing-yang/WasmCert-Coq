@@ -614,8 +614,8 @@ Proof.
   by rewrite fmap_length.
 Qed.
 
-Lemma gmap_of_memory_append_disjoint l len:
-  new_2d_gmap_at_n (N.of_nat (length l)) len #00 ##ₘ gmap_of_memory l.
+Lemma gmap_of_memory_append_disjoint l len init_b:
+  new_2d_gmap_at_n (N.of_nat (length l)) len init_b ##ₘ gmap_of_memory l.
 Proof.
   unfold gmap_of_memory.
   replace (length l) with (length (memory_to_list <$> l)); first by apply gmap_of_list_2d_append_disjoint.
@@ -632,9 +632,9 @@ Proof.
   by apply gmap_of_list_2d_append.
 Qed.
 
-Lemma gmap_of_memory_append l sz sz_lim:
-  gmap_of_memory (l ++ [::create_memory sz sz_lim]) =
-  new_2d_gmap_at_n (N.of_nat (length l)) (N.to_nat sz) #00 ∪ gmap_of_memory l.
+Lemma gmap_of_memory_append l sz sz_lim init_b:
+  gmap_of_memory (l ++ [::create_memory sz sz_lim init_b]) =
+  new_2d_gmap_at_n (N.of_nat (length l)) (N.to_nat sz) init_b ∪ gmap_of_memory l.
 Proof.
   unfold gmap_of_memory, create_memory.
   replace (length l) with (length (memory_to_list <$> l)); last by rewrite fmap_length.
@@ -847,6 +847,29 @@ Proof.
       inversion Heq; subst; clear Heq.
       lia.
 Qed.
+
+Ltac simplify_lookup :=
+  repeat match goal with
+  | H: gmap_of_table _ !! _ = _ |- _ =>
+       unfold gmap_of_table in H
+  | H: gmap_of_memory _ !! _ = _ |- _ =>
+       unfold gmap_of_memory in H
+  | H: gmap_of_list_2d _ !! _ = _ |- _ =>
+       rewrite gmap_of_list_2d_lookup in H
+  | H: gmap_of_list_lookup _ !! _ = _ |- _ =>
+       rewrite gmap_of_list_lookup in H
+  | H: match ?term with
+       | Some _ => _
+       | None => None
+       end = Some _ |- _ =>
+       let Heq := fresh "Heq" in
+       destruct term eqn: Heq => //
+  | H: context C [N.of_nat (N.to_nat _)] |- _ =>
+    rewrite N2Nat.id in H
+  | H: context C [N.to_nat (N.of_nat _)] |- _ =>
+    rewrite Nat2N.id in H
+  | _ => resolve_finmap
+  end.
 
 (* Old
 Inductive loc : Type :=

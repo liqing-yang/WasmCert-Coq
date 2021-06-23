@@ -166,8 +166,8 @@ Fixpoint to_bytelist (l: seq host_value) : option (seq byte) :=
 Definition create_table (len: N) : tableinst :=
   Build_tableinst (List.repeat None (N.to_nat len)) (Some len).
 
-Definition create_memory (sz: N) (sz_lim: N) :=
-  Build_memory (mem_make #00 sz) (Some sz_lim).
+Definition create_memory (sz: N) (sz_lim: N) (init_b: byte) :=
+  Build_memory (mem_make init_b sz) (Some sz_lim).
 
 Definition is_funcref (v: host_value) :=
   match v with

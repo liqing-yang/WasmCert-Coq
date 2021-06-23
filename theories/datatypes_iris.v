@@ -617,7 +617,7 @@ with host_expr : Type :=
 | HE_wasm_global_create : global -> host_expr
 | HE_wasm_global_get : id -> host_expr
 | HE_wasm_global_set : id -> id -> host_expr
-| HE_wasm_memory_create : N -> N -> host_expr
+| HE_wasm_memory_create : N -> N -> byte -> host_expr
 | HE_wasm_memory_get : id -> N -> host_expr
 | HE_wasm_memory_set : id -> N -> id -> host_expr
 | HE_wasm_memory_grow : id -> N -> host_expr
