@@ -15,14 +15,9 @@ From iris.program_logic Require Export language lifting.
 
 Require Import iris.
 
-Definition instance1 := 1%N.
-Definition instance2 := 2%N.
 Definition memory1 := 11%N.
 Definition byte1 := 21%N.
 Definition byte2 := 22%N.
-
-Definition store11 := list_byte_of_string "store11".
-Definition store42 := list_byte_of_string "store42".
 
 Notation "A ;;; B" := (HE_seq A B) (at level 2).
 Notation "A ::= B" := (HE_setglobal A B) (at level 5).
@@ -48,5 +43,6 @@ Proof.
   iApply wp_mono; last by iApply wp_memory_create.
   iIntros (v) "H".
   destruct v => //; destruct w; try iAssumption; destruct m => //.
+  iAssert ((N.of_nat n ↦[wm][0%N] #00)%I ∧ (N.of_nat n ↦[wm][1%N] #00)%I)%I as "H2"; first admit.
   admit.
 Admitted.

@@ -1457,11 +1457,26 @@ Qed.
       pure_reduce hs s locs (HE_wasm_table_create len) hs s' locs (HE_value (HV_wov (WOV_tableref (Mk_tableidx n))))
  *)
 
+(*
+  It turns out that the post-cnodition specified in universal quantifiers would not be useful
+    in proving actual programs, since there's no way to instantiate a universally-quantified
+    assertion with multiple instances of variables in general.
+
+  We have to use the big_op notations that Iris has defined instead. The following files in Iris
+    are references:
+
+  - https://gitlab.mpi-sws.org/iris/iris/-/blob/master/iris/algebra/big_op.v, especially the start
+  - https://gitlab.mpi-sws.org/iris/iris/-/blob/master/iris/bi/big_op.v
+
+  To get a specific instance from this big_sepM post-condition, use big_sepM_lookup.
+ *)
+Check new_2d_gmap_at_n.
+
 Lemma wp_table_create len s E:
   ⊢
   (WP HE_wasm_table_create len @ s; E
   {{ fun v => match v with
-           | HV_wov (WOV_tableref (Mk_tableidx n)) => ∀ (i:N), ⌜ (i < len)%N ⌝ -∗ N.of_nat n ↦[wt][ i ] None
+           | HV_wov (WOV_tableref (Mk_tableidx n)) => [∗ map] p ↦ v ∈ new_2d_gmap_at_n (N.of_nat n) (N.to_nat len) (None: funcelem), p.1↦[wt][p.2] v
            | _ => False
            end
   }})%I.
@@ -1502,12 +1517,8 @@ Proof.
     iSplitL "Hwt".
     + by rewrite gmap_of_table_append.
     + iSplit => //.
-      iIntros (i) "%H".
-      (* This is the correct usage of premises with big_sepM [∗ map] like this. Add a bit more
-         comments in the future -- this will surely be forgotten in the future. *)
-      iDestruct (big_sepM_lookup with "Hl") as "Hni" => //.
-      apply new_2d_gmap_at_n_lookup.
-      lia.
+      iApply big_sepM_mono; last by iApply "Hl".
+      by move => [i j] x Hlookup.
 Qed.
 
 (*
@@ -1609,7 +1620,7 @@ Lemma wp_memory_create sz sz_lim init_b s E:
   ⊢
   (WP HE_wasm_memory_create sz sz_lim init_b @ s; E
   {{ fun v => match v with
-           | HV_wov (WOV_memoryref (Mk_memidx n)) => ∀ (i:N), ⌜ (i < sz)%N ⌝ -∗ N.of_nat n ↦[wm][ i ] init_b
+           | HV_wov (WOV_memoryref (Mk_memidx n)) => [∗ map] p ↦ v ∈ new_2d_gmap_at_n (N.of_nat n) (N.to_nat sz) init_b, p.1↦[wm][p.2] v
            | _ => False
            end
   }})%I.
@@ -1640,10 +1651,8 @@ Proof.
     iSplitL "Hwm".
     + by rewrite gmap_of_memory_append.
     + iSplit => //.
-      iIntros (i) "%H".
-      iDestruct (big_sepM_lookup with "Hl") as "Hni" => //.
-      rewrite new_2d_gmap_at_n_lookup => //.
-      lia.
+      iApply big_sepM_mono; last by iApply "Hl".
+      by move => [i j] x Hlookup.
 Qed.
 
 (*  
@@ -1763,7 +1772,7 @@ Lemma wp_memory_grow s E idm mn n:
   ⊢
   (WP HE_wasm_memory_grow idm n @ s; E
   {{ fun v => match v with
-           | HV_wasm_value (VAL_int32 v') => ∃ (new_sz:N) (init_b: byte), (⌜ v' = Wasm_int.int_of_Z i32m (Z.of_N new_sz) ⌝ ∗ ∀ (i:N), ⌜ (i < new_sz * page_size)%N ⌝ -∗ ⌜ ((i + n * page_size)%N >= new_sz * page_size)%N ⌝  -∗ (N.of_nat mn) ↦[wm][ i ] init_b)
+           | HV_wasm_value (VAL_int32 v') => ∃ (m: memory), [∗ map] p ↦ v ∈ mem_grow_appendix m mn n, p.1 ↦[wm][ p.2 ] v
            | HV_trap => True
            | _ => False     
            end
@@ -1794,36 +1803,9 @@ Proof.
     + erewrite gmap_of_memory_grow; eauto.
       by eapply lookup_lt_Some.
     + iSplit => //.
-      iExists (mem_size m'), m.(mem_data).(memory_list.ml_init).
-      iSplit => //.
-      iIntros (i) "%Hub %Hlb".
-      iDestruct (big_sepM_lookup with "Hmembytes") as "Hni" => //.
-      apply elem_of_list_to_map; resolve_finmap.
-      * assert (x0 = x2); first lia.
-        subst.
-        rewrite Helem0 in Helem.
-        by inversion Helem.
-      * apply nodup_imap_inj1.
-        move => n1 n2 t1 t2 Heq.
-        inversion Heq.
-        lia.
-      * apply elem_of_lookup_imap.
-        exists (N.to_nat (N.sub i (mem_size m * page_size))), m.(mem_data).(memory_list.ml_init).
-        apply mem_grow_length in H7.
-        unfold mem_size in Hlb.
-        rewrite mem_length_divisible in Hlb.
-        rewrite H7 in Hlb.
-        assert (i >= mem_length m)%N; first lia.
-        unfold mem_size.
-        rewrite mem_length_divisible.
-        split => //.
-        -- repeat f_equal.
-           rewrite N2Nat.id.
-           lia.
-        -- apply repeat_lookup.
-           unfold mem_size in Hub.
-           rewrite mem_length_divisible in Hub.
-           lia.          
+      iExists m.
+      iApply big_sepM_mono; last by iApply "Hmembytes".
+      by move => [i j] x Hlookup.
 Qed.
 (*
   | pr_globals_create:
