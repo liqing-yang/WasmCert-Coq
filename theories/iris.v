@@ -885,7 +885,7 @@ Qed.
 
 Open Scope string_scope.
 Open Scope SEQ.
-
+  
 Lemma wp_getglobal s E id q v:
   {{{ id ↦[host]{ q } v }}} (HE_getglobal id) @ s; E
   {{{ RET v; id ↦[host]{ q } v }}}.
@@ -1818,7 +1818,7 @@ Qed.
   This one is more like new_host_func: we're only creating one item here, unlike table/memory 
     creation which creates a chunk of items at once.
 *)
-Lemma wp_glocal_create s E g:
+Lemma wp_global_create s E g:
   ⊢
   (WP HE_wasm_global_create g @ s; E
   {{ fun v => match v with
