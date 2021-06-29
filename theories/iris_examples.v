@@ -16,24 +16,25 @@ From iris.program_logic Require Export language lifting.
 Require Export common operations_iris datatypes_iris datatypes_properties_iris properties_iris.
 Require Import stdpp_aux iris_locations iris.
 
-Definition memory1 := 11%N.
-Definition byte1 := 21%N.
-Definition byte2 := 22%N.
+Open Scope string_scope.
+Open Scope SEQ.
+
+Context `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wmemG Σ, !wglobG Σ}.
 
 Notation "A ;;; B" := (HE_seq A B) (at level 2).
 Notation "A ::= B" := (HE_setglobal A B) (at level 5).
 
-Definition Program1 :=
+Section Program_SetMem42.
+
+Variable memory1 byte1 byte2 : N.
+
+Definition Program_SetMem42 :=
   (memory1 ::= (HE_wasm_memory_create 2 2 #00));;;
   (byte1 ::= (HE_value (HV_byte #34)));;;
   (byte2 ::= (HE_value (HV_byte #32)));;;
   (HE_wasm_memory_set memory1 0%N byte1);;;
   (HE_wasm_memory_set memory1 1%N byte2).
 
-Open Scope string_scope.
-Open Scope SEQ.
-
-Context `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wmemG Σ, !wglobG Σ}.
 
 (*
   Our host language doesn't have any instruction that allocates new global variables
@@ -44,11 +45,15 @@ Context `{!hsG Σ, !locG Σ, !wfuncG Σ, !wtabG Σ, !wmemG Σ, !wglobG Σ}.
   address (id): this would require the negative knowledge that a particular id is NOT allocated,
   which doesn't seem to be possible in Iris?
 *)
-Lemma program1_spec s E:
+Lemma Program_SetMem42_spec s E:
   memory1 ↦[host] wasm_zero -∗
   byte1 ↦[host] wasm_zero -∗
   byte2 ↦[host] wasm_zero -∗       
-  (WP Program1 @ s; E {{ _, ∃ n, memory1 ↦[host] HV_wov (WOV_memoryref (Mk_memidx n)) ∗ byte1 ↦[host] HV_byte #34 ∗ byte2 ↦[host] HV_byte #32 ∗ N.of_nat n↦[wm][ 0%N ] #34 ∗ N.of_nat n ↦[wm][ 1%N ] #32 }})%I.
+  (WP Program_SetMem42 @ s; E {{ _, ∃ n, memory1 ↦[host] HV_wov (WOV_memoryref (Mk_memidx n)) ∗
+                                         byte1 ↦[host] HV_byte #34 ∗
+                                         byte2 ↦[host] HV_byte #32 ∗
+                                         N.of_nat n ↦[wm][ 0%N ] #34 ∗
+                                         N.of_nat n ↦[wm][ 1%N ] #32 }})%I.
 Proof.
   iIntros "Hm Hb1 Hb2".
   iApply wp_seq; iSplitL.
@@ -118,3 +123,52 @@ Proof.
     by iFrame.
 Qed.
     
+End Program_SetMem42.
+
+Section Program_Funcs.
+
+Variable instance1 instance2 : N.
+Variable table1 : N.
+Variable memory1 memory2 : N.
+Variable store11 store42 f1 dolt : N.
+Variable store11_func store42_func dolt_func : N.
+
+Definition Program_Funcs :=
+  (instance1 ::= (HE_new_rec [::("store42", store42)]));;;
+  (instance2 ::= (HE_new_rec [::("store11", store11); ("dolt", dolt)]));;;
+  (store42_func ::= (HE_get_field instance1 "store42"));;;
+  (store11_func ::= (HE_get_field instance2 "store11"));;;
+  (dolt_func ::= (HE_get_field instance2 "dolt"));;;
+  (HE_call store42_func [::]);;;
+  (HE_call store11_func [::]);;;
+  (HE_call dolt_func [::])
+.
+
+Definition wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
+
+Definition wasm_i32_of_nat (n: nat) :=
+  VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat n)).
+
+Lemma Program_Funcs_spec s E v:
+  {{{ memory1 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 0)) ∗
+      memory2 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 1)) ∗
+      table1 ↦[host] HV_wov (WOV_tableref (Mk_tableidx 0)) ∗
+      store11 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 11); BI_store T_i32 None 0%N 0%N] ∗
+      store42 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 42); BI_store T_i32 None 0%N 0%N] ∗
+      f1 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_load T_i32 None 0%N 0%N] ∗
+      dolt ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_call_indirect 0] ∗
+      0%N ↦[wt][0%N] (Some 2)
+  }}}
+    Program_Funcs @ s; E 
+  {{{ RET v; memory1 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 0)) ∗
+      memory2 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 1)) ∗
+      table1 ↦[host] HV_wov (WOV_tableref (Mk_tableidx 0)) ∗
+      store11 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 11); BI_store T_i32 None 0%N 0%N] ∗
+      store42 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 42); BI_store T_i32 None 0%N 0%N] ∗
+      f1 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_load T_i32 None 0%N 0%N] ∗
+      dolt ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_call_indirect 0] ∗
+      0%N ↦[wt][0%N] (Some 2) }}}.
+Proof.
+  iIntros (Φ) "(Hmref1 & Hmref2 & Htref1 & Hstore11 & Hstore42 & Hf1 & Hdolt & Ht00)".
+  iIntros "HΦ".
+Qed.

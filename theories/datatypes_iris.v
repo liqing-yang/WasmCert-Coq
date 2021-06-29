@@ -12,6 +12,7 @@ From Wasm Require Import common memory memory_list.
 From Wasm Require Export numerics bytes.
 From mathcomp Require Import ssreflect ssrfun ssrnat ssrbool eqtype seq.
 From compcert Require common.Memdata.
+From Coq.Strings Require Import String.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -553,7 +554,7 @@ Inductive wasm_object_value : Type :=
 .
 Definition id : Type := N.
 
-Definition field_name := name (* TODO: ? *).
+Definition field_name := string (* TODO: ? *).
 
 Inductive host_arith : Type := (* TODO *).
 Inductive host_list_op : Type := (* TODO *) .

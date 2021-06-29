@@ -145,11 +145,11 @@ Definition host_type_to_wasm (hvt: host_type) : option value_type :=
   | _ => None
   end.
 
-(* TODO: maybe change the structure of kvp into a gmap *)
+(* TODO: This is currently O(n). Maybe change the structure of kvp into a gmap *)
 Fixpoint lookup_kvp (kvp: list (field_name * host_value)) (fname: field_name) :=
   match kvp with
   | [::] => None
-  | (f, hv) :: kvp' => if f == fname then Some hv else lookup_kvp kvp' fname
+  | (f, hv) :: kvp' => if String.eqb f fname then Some hv else lookup_kvp kvp' fname
   end.
 
 Fixpoint to_bytelist (l: seq host_value) : option (seq byte) :=
