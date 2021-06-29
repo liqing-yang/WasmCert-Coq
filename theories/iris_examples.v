@@ -149,7 +149,6 @@ Definition wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
 Definition wasm_i32_of_nat (n: nat) :=
   VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat n)).
 
-
 Definition store11_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 11); BI_store T_i32 None 0%N 0%N].
 
 Definition store42_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 42); BI_store T_i32 None 0%N 0%N].
@@ -158,6 +157,7 @@ Definition f1_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_cons
 
 Definition dolt_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_call_indirect 0].
 
+(* Extremely ugly *)
 Lemma Program_Funcs_spec s E v:
   {{{ memory1 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 0)) ∗
       memory2 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 1)) ∗
@@ -168,6 +168,9 @@ Lemma Program_Funcs_spec s E v:
       dolt ↦[host] HV_wov (WOV_funcref (Mk_funcidx 3)) ∗
       instance1 ↦[host] wasm_zero ∗
       instance2 ↦[host] wasm_zero ∗
+      store42_func ↦[host] wasm_zero ∗
+      store11_func ↦[host] wasm_zero ∗
+      dolt_func ↦[host] wasm_zero ∗
       0%N ↦[wf] store11_cl ∗
       1%N ↦[wf] store42_cl ∗
       2%N ↦[wf] f1_cl ∗
@@ -177,14 +180,14 @@ Lemma Program_Funcs_spec s E v:
     Program_Funcs @ s; E 
   {{{ RET v; True }}}.
 Proof.
-  iIntros (Φ) "(Hmref1 & Hmref2 & Htref1 & Hstore11 & Hstore42 & Hf1 & Hdolt & Hinst1 & Hinst2 & Hwf0 & Hwf1 & Hwf2 & Hwf3 & Ht00)".
+  iIntros (Φ) "(Hmref1 & Hmref2 & Htref1 & Hstore11 & Hstore42 & Hf1 & Hdolt & Hinst1 & Hinst2 & H42func & H11func & Hdoltfunc & Hwf0 & Hwf1 & Hwf2 & Hwf3 & Ht00)".
   iIntros "HΦ".
   iApply wp_seq; iSplitL.
   iApply wp_seq; iSplitL.
-  iApply wp_seq; iSplitL.
-  iApply wp_seq; iSplitL.
-  iApply wp_seq; iSplitL.
-  iApply wp_seq; iSplitL.
+  iApply wp_seq; iSplitL "Hinst1 Hstore42 Hinst2 Hstore11 Hdolt H42func H11func Hdoltfunc".
+  iApply wp_seq; iSplitL "Hinst1 Hstore42 Hinst2 Hstore11 Hdolt H42func H11func".
+  iApply wp_seq; iSplitL "Hinst1 Hstore42 Hinst2 Hstore11 Hdolt H42func".
+  iApply wp_seq; iSplitL "Hinst1 Hstore42 Hinst2 Hstore11 Hdolt".
   iApply wp_seq; iSplitL "Hinst1 Hstore42".
   - (* setglobal of instance1 *)
     iApply wp_setglobal_reduce; iSplitL "Hstore42".
@@ -203,19 +206,102 @@ Proof.
         inversion Hvalue; subst; clear Hvalue.
         by iAssumption.
     + iIntros (v0) "(_ & %Hv0 & HP)".
-      instantiate (1 := (fun _ => (instance1 ↦[host] HV_record [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))])%I)).
+      (* Carry the resources to the next instruction so that it's not lost. *)
+      instantiate (1 := (fun _ => (instance1 ↦[host] HV_record [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))] ∗ store42 ↦[host]HV_wov (WOV_funcref (Mk_funcidx 1)))%I)).
       subst.
       iApply (wp_setglobal_value with "Hinst1") => //.
-      by iIntros "!> H".
+      iIntros "!> H".
+      by iFrame.
   - (* setglobal of instance2 *)
-    admit.
+    (* This comes from the previous instruction. *)
+    iIntros (_) "(Hinst1 & Hstore42)".
+    iApply wp_setglobal_reduce; iSplitL "Hstore11 Hdolt".
+    + iApply (wp_new_rec with "[Hstore11 Hdolt]") => //=.
+      * by instantiate (1 := [("store11", HV_wov (WOV_funcref (Mk_funcidx 0)));
+                              ("dolt", HV_wov (WOV_funcref (Mk_funcidx 3)))]).
+      * iSplitL "Hstore11".
+        iExists (HV_wov (WOV_funcref (Mk_funcidx 0))).
+        by iSplit.
+      * iSplit => //.
+        iExists (HV_wov (WOV_funcref (Mk_funcidx 3))).
+        by iSplit.
+      * iIntros "!> (HP1 & HP2 & _)".
+        iSplit => //.
+        instantiate (1 := (fun v => (⌜ v = HV_record [("store11", HV_wov (WOV_funcref (Mk_funcidx 0))); ("dolt", HV_wov (WOV_funcref (Mk_funcidx 3)))] ⌝ ∗ store11 ↦[host]HV_wov (WOV_funcref (Mk_funcidx 0)) ∗ dolt ↦[host]HV_wov (WOV_funcref (Mk_funcidx 3)))%I)).
+        simpl.
+        iSplit => //.
+        iDestruct "HP1" as (v1 Hvalue1) "H1".
+        iDestruct "HP2" as (v2 Hvalue2) "H2".
+        inversion Hvalue1; subst; clear Hvalue1.
+        inversion Hvalue2; subst; clear Hvalue2.
+        by iFrame.
+    + iIntros (v0) "(_ & %Hv0 & Hstore11 & Hdolt)".
+      (* Carrying the resources again. Also, is there a way to avoid this? *)
+      instantiate (1 := (fun _ => (instance1 ↦[host] HV_record [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))] ∗ instance2 ↦[host] HV_record [("store11", HV_wov (WOV_funcref (Mk_funcidx 0))); ("dolt", HV_wov (WOV_funcref (Mk_funcidx 3)))] ∗ store42 ↦[host]HV_wov (WOV_funcref (Mk_funcidx 1)) ∗ store11 ↦[host] HV_wov (WOV_funcref (Mk_funcidx 0)) ∗ dolt ↦[host] HV_wov (WOV_funcref (Mk_funcidx 3)))%I)).
+      subst.
+      iApply (wp_setglobal_value with "Hinst2") => //.
+      iIntros "!> H".
+      by iFrame.
   - (* setglobal of store42_func *)
-    admit.
+    iIntros (v') "(Hinst1 & Hinst2 & Hstore42 & Hstore11 & Hdolt)".
+    iApply wp_setglobal_reduce; iSplitL "H42func Hinst1".
+    + iApply (wp_getfield with "Hinst1") => //.
+      iIntros "!> Hinst1".
+      iSplit => //.
+      instantiate (1 := (fun v => (⌜ v = HV_wov (WOV_funcref (Mk_funcidx 1)) ⌝ ∗ store42_func ↦[host] wasm_zero ∗ instance1 ↦[host] HV_record [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))])%I)).
+      simpl.
+      iSplit => //.
+      by iFrame.
+    + simpl.
+      iIntros (v0) "(_ & %Hvalue & H42func & Hinst1)".
+      subst.
+      iApply (wp_setglobal_value with "H42func") => //.
+      iIntros "!> H42func".
+      (* Carrying resources *)
+      instantiate (1 := (fun _ => (instance1 ↦[host] HV_record [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))] ∗ instance2 ↦[host] HV_record [("store11", HV_wov (WOV_funcref (Mk_funcidx 0))); ("dolt", HV_wov (WOV_funcref (Mk_funcidx 3)))] ∗ store42 ↦[host]HV_wov (WOV_funcref (Mk_funcidx 1)) ∗ store11 ↦[host] HV_wov (WOV_funcref (Mk_funcidx 0)) ∗ dolt ↦[host] HV_wov (WOV_funcref (Mk_funcidx 3)) ∗ store42_func ↦[host] HV_wov (WOV_funcref (Mk_funcidx 1)))%I)).
+      simpl.
+      by iFrame.
   - (* setglobal of store11_func *)
-    admit.
+    iIntros (v') "(Hinst1 & Hinst2 & Hstore42 & Hstore11 & Hdolt & H42func)".
+    iApply wp_setglobal_reduce; iSplitL "H11func Hinst2".
+    + iApply (wp_getfield with "Hinst2") => //.
+      iIntros "!> Hinst2".
+      iSplit => //.
+      instantiate (1 := (fun v => (⌜ v = HV_wov (WOV_funcref (Mk_funcidx 0)) ⌝ ∗ store11_func ↦[host] wasm_zero ∗ instance2 ↦[host] HV_record [("store11", HV_wov (WOV_funcref (Mk_funcidx 0))); ("dolt", HV_wov (WOV_funcref (Mk_funcidx 3)))])%I)).
+      simpl.
+      iSplit => //.
+      by iFrame.
+    + simpl.
+      iIntros (v0) "(_ & %Hvalue & H11func & Hinst2)".
+      subst.
+      iApply (wp_setglobal_value with "H11func") => //.
+      iIntros "!> H11func".
+      (* Carrying resources *)
+      instantiate (1 := (fun _ => (instance1 ↦[host] HV_record [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))] ∗ instance2 ↦[host] HV_record [("store11", HV_wov (WOV_funcref (Mk_funcidx 0))); ("dolt", HV_wov (WOV_funcref (Mk_funcidx 3)))] ∗ store42 ↦[host]HV_wov (WOV_funcref (Mk_funcidx 1)) ∗ store11 ↦[host] HV_wov (WOV_funcref (Mk_funcidx 0)) ∗ dolt ↦[host] HV_wov (WOV_funcref (Mk_funcidx 3)) ∗ store42_func ↦[host] HV_wov (WOV_funcref (Mk_funcidx 1)) ∗ store11_func ↦[host] HV_wov (WOV_funcref (Mk_funcidx 0)))%I)).
+      simpl.
+      by iFrame.
   - (* setglobal of dolt_func *)
-    admit.
+    iIntros (v') "(Hinst1 & Hinst2 & Hstore42 & Hstore11 & Hdolt & H42func & H11func)".
+    iApply wp_setglobal_reduce; iSplitL "Hdoltfunc Hinst2".
+    + iApply (wp_getfield with "Hinst2") => //.
+      iIntros "!> Hinst2".
+      iSplit => //.
+      instantiate (1 := (fun v => (⌜ v = HV_wov (WOV_funcref (Mk_funcidx 3)) ⌝ ∗ dolt_func ↦[host] wasm_zero ∗ instance2 ↦[host] HV_record [("store11", HV_wov (WOV_funcref (Mk_funcidx 0))); ("dolt", HV_wov (WOV_funcref (Mk_funcidx 3)))])%I)).
+      simpl.
+      iSplit => //.
+      by iFrame.
+    + simpl.
+      iIntros (v0) "(_ & %Hvalue & Hdoltfunc & Hinst2)".
+      subst.
+      iApply (wp_setglobal_value with "Hdoltfunc") => //.
+      iIntros "!> Hdoltfunc".
+      (* Carrying resources *)
+      instantiate (1 := (fun _ => (instance1 ↦[host] HV_record [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))] ∗ instance2 ↦[host] HV_record [("store11", HV_wov (WOV_funcref (Mk_funcidx 0))); ("dolt", HV_wov (WOV_funcref (Mk_funcidx 3)))] ∗ store42 ↦[host]HV_wov (WOV_funcref (Mk_funcidx 1)) ∗ store11 ↦[host] HV_wov (WOV_funcref (Mk_funcidx 0)) ∗ dolt ↦[host] HV_wov (WOV_funcref (Mk_funcidx 3)) ∗ store42_func ↦[host] HV_wov (WOV_funcref (Mk_funcidx 1)) ∗ store11_func ↦[host] HV_wov (WOV_funcref (Mk_funcidx 0)) ∗ dolt_func ↦[host] HV_wov (WOV_funcref (Mk_funcidx 3)))%I)).
+      simpl.
+      by iFrame.
   - (* HE_call of store42_func *)
+    iIntros (v') "(Hinst1 & Hinst2 & Hstore42 & Hstore11 & Hdolt & H42func & H11func & Hdoltfunc)".
+    iApply wp_call_wasm.
     admit.
   - (* HE_call of store11_func *)
     admit.
