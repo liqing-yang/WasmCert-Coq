@@ -149,26 +149,76 @@ Definition wasm_zero := HV_wasm_value (VAL_int32 (Wasm_int.int_zero i32m)).
 Definition wasm_i32_of_nat (n: nat) :=
   VAL_int32 (Wasm_int.int_of_Z i32m (Z.of_nat n)).
 
+
+Definition store11_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 11); BI_store T_i32 None 0%N 0%N].
+
+Definition store42_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 42); BI_store T_i32 None 0%N 0%N].
+
+Definition f1_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_load T_i32 None 0%N 0%N].
+
+Definition dolt_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_call_indirect 0].
+
 Lemma Program_Funcs_spec s E v:
   {{{ memory1 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 0)) ∗
       memory2 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 1)) ∗
       table1 ↦[host] HV_wov (WOV_tableref (Mk_tableidx 0)) ∗
-      store11 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 11); BI_store T_i32 None 0%N 0%N] ∗
-      store42 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 42); BI_store T_i32 None 0%N 0%N] ∗
-      f1 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_load T_i32 None 0%N 0%N] ∗
-      dolt ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_call_indirect 0] ∗
+      store11 ↦[host] HV_wov (WOV_funcref (Mk_funcidx 0)) ∗
+      store42 ↦[host] HV_wov (WOV_funcref (Mk_funcidx 1)) ∗
+      f1 ↦[host] HV_wov (WOV_funcref (Mk_funcidx 2)) ∗
+      dolt ↦[host] HV_wov (WOV_funcref (Mk_funcidx 3)) ∗
+      instance1 ↦[host] wasm_zero ∗
+      instance2 ↦[host] wasm_zero ∗
+      0%N ↦[wf] store11_cl ∗
+      1%N ↦[wf] store42_cl ∗
+      2%N ↦[wf] f1_cl ∗
+      3%N ↦[wf] dolt_cl ∗
       0%N ↦[wt][0%N] (Some 2)
   }}}
     Program_Funcs @ s; E 
-  {{{ RET v; memory1 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 0)) ∗
-      memory2 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 1)) ∗
-      table1 ↦[host] HV_wov (WOV_tableref (Mk_tableidx 0)) ∗
-      store11 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 11); BI_store T_i32 None 0%N 0%N] ∗
-      store42 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_const (wasm_i32_of_nat 42); BI_store T_i32 None 0%N 0%N] ∗
-      f1 ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_load T_i32 None 0%N 0%N] ∗
-      dolt ↦[wf] FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_call_indirect 0] ∗
-      0%N ↦[wt][0%N] (Some 2) }}}.
+  {{{ RET v; True }}}.
 Proof.
-  iIntros (Φ) "(Hmref1 & Hmref2 & Htref1 & Hstore11 & Hstore42 & Hf1 & Hdolt & Ht00)".
+  iIntros (Φ) "(Hmref1 & Hmref2 & Htref1 & Hstore11 & Hstore42 & Hf1 & Hdolt & Hinst1 & Hinst2 & Hwf0 & Hwf1 & Hwf2 & Hwf3 & Ht00)".
   iIntros "HΦ".
-Qed.
+  iApply wp_seq; iSplitL.
+  iApply wp_seq; iSplitL.
+  iApply wp_seq; iSplitL.
+  iApply wp_seq; iSplitL.
+  iApply wp_seq; iSplitL.
+  iApply wp_seq; iSplitL.
+  iApply wp_seq; iSplitL "Hinst1 Hstore42".
+  - (* setglobal of instance1 *)
+    iApply wp_setglobal_reduce; iSplitL "Hstore42".
+    + iApply (wp_new_rec with "[Hstore42]") => //=.
+      * by instantiate (1 := [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))]).
+      * iSplit => //.
+        iExists (HV_wov (WOV_funcref (Mk_funcidx 1))).
+        by iSplit.
+      * iIntros "!> HP".
+        iSplit => //.
+        instantiate (1 := (fun v => (⌜ v = HV_record [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))] ⌝ ∗ store42 ↦[host]HV_wov (WOV_funcref (Mk_funcidx 1))))%I).
+        simpl.
+        iSplit => //.
+        iDestruct "HP" as "(H & _)".
+        iDestruct "H" as (v' Hvalue) "H".
+        inversion Hvalue; subst; clear Hvalue.
+        by iAssumption.
+    + iIntros (v0) "(_ & %Hv0 & HP)".
+      instantiate (1 := (fun _ => (instance1 ↦[host] HV_record [("store42", HV_wov (WOV_funcref (Mk_funcidx 1)))])%I)).
+      subst.
+      iApply (wp_setglobal_value with "Hinst1") => //.
+      by iIntros "!> H".
+  - (* setglobal of instance2 *)
+    admit.
+  - (* setglobal of store42_func *)
+    admit.
+  - (* setglobal of store11_func *)
+    admit.
+  - (* setglobal of dolt_func *)
+    admit.
+  - (* HE_call of store42_func *)
+    admit.
+  - (* HE_call of store11_func *)
+    admit.
+  - (* HE_call of dolt_func *)
+    admit.
+Admitted.

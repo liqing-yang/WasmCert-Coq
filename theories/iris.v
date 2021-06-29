@@ -1237,24 +1237,25 @@ Proof.
     inv_head_step.
     iApply ("HT" with "HP"); by iAssumption.
 Qed.
-      
-Lemma wp_new_rec s E (kip: list (field_name * id)) (w: list (field_name * host_value)) P:
+
+Lemma wp_new_rec s E (kip: list (field_name * id)) (w: list (field_name * host_value)):
   length kip = length w ->
-  (∀ i key id,
-      ⌜ kip !! i = Some (key, id) ⌝ -∗
-      ∃ v, ⌜ w !! i = Some (key, v)⌝ ∗
-      □(P -∗ ( id ↦[host] v ))) ⊢
-  {{{ P }}} (HE_new_rec kip) @ s; E {{{ RET (HV_record w); P }}}.
+  {{{ [∗ list] i ↦ p ∈ kip, match p with
+                            | (key, id) => (∃ v, ⌜ w !! i = Some (key, v) ⌝ ∗ id ↦[host] v)
+                            end
+  }}} (HE_new_rec kip) @ s; E {{{ RET (HV_record w);
+      [∗ list] i ↦ p ∈ kip, match p with
+                            | (key, id) => (∃ v, ⌜ w !! i = Some (key, v) ⌝ ∗ id ↦[host] v)
+                            end
+                              }}}.
 Proof.
   move => HLength.
-  iIntros "#Hkvp".
-  iModIntro.
   iIntros (Φ) "HP HQ".
   iApply wp_lift_atomic_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
-  iDestruct "Hσ" as "[Hhs Ho]".
+  iDestruct "Hσ" as "(Hhs & Ho)".
   repeat iModIntro.
   iSplit.
   - iPureIntro.
@@ -1269,16 +1270,13 @@ Proof.
     iAssert ( ∀ (i: nat) (key: field_name) (id: id), ⌜ kip !! i = Some (key, id) ⌝ -∗
                            ∃ v, ⌜w !! i = Some (key, v) ⌝ ∗ ⌜ hs !! id = Some v ⌝ )%I as "%H".
     {
-      iIntros (i key id) "Hlookup".
-      iAssert ((∃ v, ⌜ w !! i = Some (key, v) ⌝ ∗ □(P -∗ id ↦[host] v))%I) with "[Hlookup]" as "H".
-      {
-        by iApply "Hkvp".
-      }
-      iDestruct "H" as (v) "[H1 #H2]".
+      iIntros (i key id) "%Hlookup".
+      iDestruct (big_sepL_lookup with "HP") as "H"; first by apply Hlookup.
+      iSimpl.
+      iDestruct "H" as (v Hreslookup) "Hid".
       iExists v.
-      iFrame.
-      iDestruct (gen_heap_valid with "Hhs [H2 HP]") as %?; first by iApply "H2".
-      by iPureIntro.
+      iSplit => //.
+      by iDestruct (gen_heap_valid with "Hhs Hid") as "%".
     }
     inv_head_step; iFrame; iSplit => //.
     + iAssert (⌜ zip kip.*1 hvs = w ⌝)%I as "%Heq".
@@ -2500,7 +2498,8 @@ Qed.
    forall s f i a hs,
      f.(f_inst).(inst_funcs) !! i = Some a ->
      wasm_reduce hs s f [::AI_basic (BI_call i)] hs s f [::AI_invoke a]
-*)
+ *)
+
 Lemma wp_wasm_call: True.
 Admitted.
 (*
