@@ -14,7 +14,7 @@ From iris.program_logic Require Import weakestpre total_weakestpre.
 From iris.program_logic Require Export language lifting.
 
 Require Export common operations_iris datatypes_iris datatypes_properties_iris properties_iris.
-Require Import stdpp_aux iris_locations iris.
+Require Import stdpp_aux iris_locations iris iris_lifting.
 
 Open Scope string_scope.
 Open Scope SEQ.
@@ -40,10 +40,6 @@ Definition Program_SetMem42 :=
   Our host language doesn't have any instruction that allocates new global variables
   (setglobal only modifies), so we assume a set of pre-allocated variables initialised to zero.
   
-
-  Note that it's non-trivial to support the allocation of new global variables at a specific
-  address (id): this would require the negative knowledge that a particular id is NOT allocated,
-  which doesn't seem to be possible in Iris?
 *)
 Lemma Program_SetMem42_spec s E:
   memory1 ↦[host] wasm_zero -∗
@@ -157,6 +153,22 @@ Definition f1_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_cons
 
 Definition dolt_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_const (wasm_i32_of_nat 0); BI_call_indirect 0].
 
+Definition A := (0%N ↦[host] wasm_zero)%I.
+
+Search bi_wand.
+
+Lemma test_wand B C:
+  ((A -∗ B) -∗ (A -∗ C)) ⊣⊢ (A -∗ (B -∗ C)).
+Proof.
+  iSplit.
+  - iIntros "HX HA HB".
+    iSpecialize ("HX" with "[HB]"); first by iIntros.
+    by iApply "HX".
+  - iIntros "HX HY HA".
+    iSpecialize ("HX" with "HA").
+    admit.
+Admitted.
+    
 (* Extremely ugly *)
 Lemma Program_Funcs_spec s E v:
   {{{ memory1 ↦[host] HV_wov (WOV_memoryref (Mk_memidx 0)) ∗
@@ -301,10 +313,20 @@ Proof.
       by iFrame.
   - (* HE_call of store42_func *)
     iIntros (v') "(Hinst1 & Hinst2 & Hstore42 & Hstore11 & Hdolt & H42func & H11func & Hdoltfunc)".
-    iApply wp_call_wasm.
+    Check wp_call_wasm.
+    (* There are two Iris subgoals here; this pattern allocates the resources to the second one
+       (instead of the default being the first one) *)
+    iApply (wp_call_wasm with "[] [H42func Hwf1]"); (try by instantiate (1 := [])).
+    2: by repeat iFrame.
+    iIntros (v0) "!> HP HΦ".
+    iDestruct "HP" as "(Hstore42 & Hwf1 & _)".
+    iApply (wp_wasm_invoke_native with "[] [Hwf1]") => //=; (try by instantiate (1 := [])); try by [].
+    iIntros (v1) "!> HP HΦ".
     admit.
   - (* HE_call of store11_func *)
     admit.
   - (* HE_call of dolt_func *)
     admit.
 Admitted.
+
+End Program_Funcs.
