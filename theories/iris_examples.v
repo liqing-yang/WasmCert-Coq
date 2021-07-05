@@ -35,7 +35,6 @@ Definition Program_SetMem42 :=
   (HE_wasm_memory_set memory1 0%N byte1);;;
   (HE_wasm_memory_set memory1 1%N byte2).
 
-
 (*
   Our host language doesn't have any instruction that allocates new global variables
   (setglobal only modifies), so we assume a set of pre-allocated variables initialised to zero.
@@ -69,7 +68,6 @@ Proof.
                             end
                         )%I).
     unfold new_2d_gmap_at_n => /=.
-    Print big_sepM_insert.
     iDestruct (big_sepM_insert with "H") as "[Hb H]" => /=; first by rewrite lookup_insert_ne.
     iFrame.
     iDestruct (big_sepM_insert with "H") as "[Hb H]" => /=; first by rewrite lookup_empty.
@@ -84,43 +82,46 @@ Proof.
                             end
                       )%I).
     simpl.
-    iApply (wp_setglobal_value with "Hm") => //.
-    iIntros "!> Hm".
+    iApply (wp_wand with "[Hm]"); first by iApply wp_setglobal_value => //.
+    simpl.
     destruct v => //; destruct w; try iAssumption; destruct m => //.
+    iIntros (v) "[% HP]"; subst.
     by iFrame.
   - (* setglobal byte1 *)
     iIntros (v) "H".
-    iApply (wp_setglobal_value with "Hb1") => //.
-    destruct v => //; destruct w; try iAssumption; destruct m => //.
     instantiate (1 := (fun v => (∃ n, (N.of_nat n ↦[wm][0%N] #00 ∗ N.of_nat n ↦[wm][1%N] #00 ∗ memory1 ↦[host] (HV_wov (WOV_memoryref (Mk_memidx n))) ∗ byte1 ↦[host] (HV_byte #34)))%I)).
-    iIntros "!> Hb1".
+    iApply (wp_wand with "[Hb1]"); first by iApply (wp_setglobal_value with "Hb1") => //.
+    destruct v => //; destruct w; try iAssumption; destruct m => //.
+    iIntros (v) "[%H Hb1]"; subst.
     iExists n.
     by iFrame.
   - (* setglobal byte2 *)
     iIntros (v) "H".
-    iApply (wp_setglobal_value with "Hb2") => //.
     instantiate (1 := (fun v => (∃ n, (N.of_nat n ↦[wm][0%N] #00 ∗ N.of_nat n ↦[wm][1%N] #00 ∗ memory1 ↦[host] (HV_wov (WOV_memoryref (Mk_memidx n))) ∗ byte1 ↦[host] (HV_byte #34) ∗ byte2 ↦[host] (HV_byte #32)))%I)).
-    iIntros "!> Hb1".
+    iApply (wp_wand with "[Hb2]"); first by iApply (wp_setglobal_value with "Hb2") => //.
+    iDestruct "H" as (n) "H".
+    iIntros (v0) "[%H Hb1]"; subst.
+    iExists n.
     by iFrame.
   - (* memory_set 1 *)
     iIntros (v) "H".
     iDestruct "H" as (n) "(Hm1 & Hm2 & Hm & Hb1 & Hb2)".
-    iApply (wp_memory_set with "[Hb1 Hm Hm1]"); first by iFrame.
     instantiate (1 := (fun v => (∃ n, (N.of_nat n ↦[wm][0%N] #34 ∗ N.of_nat n ↦[wm][1%N] #00 ∗ memory1 ↦[host] (HV_wov (WOV_memoryref (Mk_memidx n))) ∗ byte1 ↦[host] (HV_byte #34) ∗ byte2 ↦[host] (HV_byte #32)))%I)).
-    iIntros "!> (Hb1 & Hm & Hm1)".
+    iApply (wp_wand with "[Hb1 Hm Hm1]"); first by iApply (wp_memory_set with "[Hb1 Hm Hm1]"); iFrame.
+    iIntros (v0) "(%Hv & Hb1 & Hm & Hm1)"; subst.
     iExists n.
     by iFrame.
   - (* memory_set 2 *)
     iIntros (v) "H".
     iDestruct "H" as (n) "(Hm1 & Hm2 & Hm & Hb1 & Hb2)".
-    iApply (wp_memory_set with "[Hb2 Hm Hm2]"); first by iFrame.
-    iIntros "!> (Hb2 & Hm & Hm2)".
+    iApply (wp_wand with "[Hb2 Hm Hm2]"); first iApply (wp_memory_set with "[Hb2 Hm Hm2]"); first by iFrame.
+    iIntros (v0) "(Hb2 & Hm & Hm2)".
     iExists n.
     by iFrame.
 Qed.
     
 End Program_SetMem42.
-
+(*
 Section Program_Funcs.
 
 Variable instance1 instance2 : N.
@@ -156,6 +157,17 @@ Definition dolt_cl := FC_func_native empty_instance (Tf [::] [::]) [::] [::BI_co
 Definition A := (0%N ↦[host] wasm_zero)%I.
 
 Search bi_wand.
+
+(*
+{{{ P }}} e' {{{ Q }}}, e --> e' ⊢
+{{{ P }}} e {{{ Q }}}
+
+□(P -∗ WP e' {{ Q }}) ⊢
+□(P -∗ WP e {{ Q }})
+
+P -∗
+(WP e' {{ Q }} ⊢ WP e {{ Q }})
+ *)
 
 Lemma test_wand B C:
   ((A -∗ B) -∗ (A -∗ C)) ⊣⊢ (A -∗ (B -∗ C)).
@@ -330,3 +342,4 @@ Proof.
 Admitted.
 
 End Program_Funcs.
+*)

@@ -73,13 +73,13 @@ Open Scope string_scope.
 Open Scope SEQ.
   
 Lemma wp_getglobal s E id q v:
-  {{{ id ↦[host]{ q } v }}} (HE_getglobal id) @ s; E
-  {{{ RET v; id ↦[host]{ q } v }}}.
+  id ↦[host]{ q } v -∗
+     WP (HE_getglobal id) @ s; E {{ v', ⌜ v = v' ⌝ ∗ id ↦[host]{ q } v }}.
 Proof.
   (* Some explanations on proofmode tactics and patterns are available on 
        https://gitlab.mpi-sws.org/iris/iris/blob/master/docs/proof_mode.md *)
   (* After 2 days the solution is finally found -- need to 'Open Scope string_scope' first. *)
-  iIntros (Φ) "Hl HΦ".
+  iIntros "Hl".
   iApply wp_lift_atomic_step => //.
   (*
     This is just another iIntros although with something new: !>. This !> pattern is for
@@ -99,7 +99,7 @@ Proof.
     by apply pr_getglobal.
   - iIntros (e2 σ2 efs Hstep); inv_head_step.
     (* There are two cases -- either the lookup result v is an actual valid value, or a trap. *)
-    + repeat iModIntro; repeat (iSplit; first done). iFrame. iSplit => //. by iApply "HΦ".
+    + repeat iModIntro. by iFrame.
     (* But it can't be a trap since we already have full knowledge from H what v should be. *)    
     + by rewrite H5 in H. (* TODO: fix this bad pattern of using generated hypothesis names *)  
 Qed.
@@ -108,11 +108,12 @@ Qed.
      is not a trap. *)
 Lemma wp_setglobal_value s E id w v:
   v <> HV_trap ->
-  {{{ id ↦[host] w }}} HE_setglobal id (HE_value v) @ s; E
-  {{{ RET v; id ↦[host] v }}}.
+  id ↦[host] w -∗
+     WP HE_setglobal id (HE_value v) @ s; E {{ v', ⌜ v = v' ⌝ ∗ id ↦[host] v' }}.
 Proof.
   intros HNTrap.
-  iIntros (Φ) "Hl HΦ". iApply wp_lift_atomic_step => //.
+  iIntros "Hl".
+  iApply wp_lift_atomic_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ !>".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
@@ -129,16 +130,13 @@ Proof.
     (* This eliminates the update modality by updating hs *)
     iMod (gen_heap_update with "Hhs Hl") as "(Hhs & Hl)".
     iModIntro.
-    iFrame.
-    iSplit => //.
-    by iApply "HΦ".
+    by iFrame.
 Qed.
       
-Lemma wp_setglobal_trap s E id Ψ:
-  {{{ Ψ }}} HE_setglobal id (HE_value HV_trap) @ s; E
-  {{{ RET (HV_trap); Ψ }}}.
+Lemma wp_setglobal_trap s E id:
+  ⊢ WP HE_setglobal id (HE_value HV_trap) @ s; E {{ v, ⌜ v = HV_trap ⌝ }}.
 Proof.
-  iIntros (Φ) "Hl HΦ". iApply wp_lift_atomic_step => //.
+  iApply wp_lift_atomic_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ !>".
   iSplit.
   - destruct s => //.
@@ -146,7 +144,7 @@ Proof.
     apply hs_red_equiv. repeat eexists.
     by apply pr_setglobal_trap.
   - iIntros (e2 σ2 efs Hstep); inv_head_step.
-    repeat iModIntro. iFrame. iSplit => //. by iApply "HΦ".
+    repeat iModIntro. by iFrame.
 Qed.
  
 (* Manually deal with evaluation contexts. Supposedly this proof should be similar to
@@ -222,10 +220,10 @@ Qed.
 
 (* This is rather easy, following the same idea as getglobal. *)
 Lemma wp_getlocal s E n q v:
-  {{{ n ↦ₗ{ q } v }}} (HE_getlocal n) @ s; E
-  {{{ RET v; n ↦ₗ{ q } v }}}.
+  n ↦ₗ{ q } v -∗
+    WP (HE_getlocal n) @ s; E {{ v', ⌜ v = v' ⌝ ∗ n ↦ₗ{ q } v }}.
 Proof.
-  iIntros (Φ) "Hl HΦ".
+  iIntros "Hl".
   iApply wp_lift_atomic_step => //.
   iIntros (σ1 ms κ κs mt) "Hσ !>".
   destruct σ1 as [[hs ws] locs].
@@ -242,7 +240,7 @@ Proof.
   - iIntros (e2 σ2 efs Hstep); inv_head_step.
     + repeat iModIntro; repeat (iSplit; first done).
       rewrite H4 in Hlookup. inversion Hlookup.
-      iFrame. iSplit => //. by iApply "HΦ".
+      by iFrame.
     + by rewrite H4 in Hlookup.
 Qed.
 
@@ -251,10 +249,10 @@ Qed.
    Note the ownership required for the different types of resources.
 *)
 Lemma wp_setlocal s E n q id w v:
-  {{{ n ↦ₗ w ∗ id ↦[host]{ q } v }}} (HE_setlocal n id) @ s; E
-  {{{ RET v; n ↦ₗ v ∗ id ↦[host]{ q } v}}}.
+  n ↦ₗ w ∗ id ↦[host]{ q } v -∗
+    WP HE_setlocal n id @ s; E {{ v', ⌜ v = v' ⌝ ∗ n ↦ₗ v ∗ id ↦[host]{ q } v}}.
 Proof.
-  iIntros (Φ) "[Hl Hh] HΦ".
+  iIntros "[Hl Hh]".
   iApply wp_lift_atomic_step => //.
   iIntros (σ1 ms κ κs mt) "Hσ !>".
   destruct σ1 as [[hs ws] locs].
@@ -285,8 +283,7 @@ Proof.
       iFrame.
       simpl.
       rewrite gmap_of_list_insert => //.
-      iSplitL "Hlocs" => //.
-      iSplit => //. iApply "HΦ". by iFrame.
+      by iSplitL "Hlocs" => //.
     + by rewrite H11 in H.
     + symmetry in Hlookup_locs. apply lookup_lt_Some in Hlookup_locs.
       lia.
@@ -311,20 +308,14 @@ Qed.
      defining it as an evaluation context. We have to see what needs to be done here. The proof
      to this should be a standard model to other context-like instructions (seq, etc.). *)
 (* TODO: Add detailed comments on how to resolve fupd in both iris 3.3 and new iris *)
-Lemma wp_if s E id q v w e1 e2 P Q:
+Lemma wp_if s E id q v e1 e2 Φ:
   v ≠ HV_trap ->
-  {{{ P ∗ id ↦[host]{ q } v ∗ ⌜ v ≠ wasm_zero ⌝ }}} e1 @ s; E {{{ RET w; Q }}} ∗
-  {{{ P ∗ id ↦[host]{ q } v ∗ ⌜ v = wasm_zero ⌝ }}} e2 @ s; E {{{ RET w; Q }}} ⊢
-  {{{ P ∗ id ↦[host]{ q } v }}} (HE_if id e1 e2) @ s; E
-  {{{ RET w; Q }}}.
+  (id ↦[host]{ q } v ∗ ⌜ v ≠ wasm_zero ⌝ -∗ WP e1 @ s; E {{ Φ }}) -∗
+  (id ↦[host]{ q } v ∗ ⌜ v = wasm_zero ⌝ -∗ WP e2 @ s; E {{ Φ }}) -∗
+  id ↦[host]{ q } v -∗ WP HE_if id e1 e2 @ s; E {{ Φ }}.
 Proof.
   move => HNTrap.
-  iIntros "[#HT #HF]".
-  (* If the goal involves more than one triples (unlike the previous proofs), the conclusion 
-       will somehow have a □ modality around. That's not a problem nonetheless since our premises
-       are persistent as well. *)
-  iModIntro.
-  iIntros (Φ) "[HP Hh] HΦ".
+  iIntros "HT HF Hh".
   iApply wp_lift_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
@@ -351,47 +342,35 @@ Proof.
     + iMod "Hfupd".
       iModIntro.
       iFrame.
-      iApply ("HT" with "[HP Hh]") => //; by iFrame.
+      iApply "HT".
+      by iFrame.
     + iMod "Hfupd".
       iModIntro.
       iFrame.
-      iApply ("HF" with "[HP Hh]") => //; by iFrame.
+      iApply "HF".
+      by iFrame.
     + by rewrite H in H12.
 Qed.
 
 (* a simper-to-use version that only needs the branch for true. Note that this and the following
      lemma combined form a solution to Exercise 4.9 in ILN. *)
-Lemma wp_if_true s E id q v w e1 e2 P Q:
+Lemma wp_if_true s E id q v e1 e2 Φ:
   v ≠ HV_trap ->
   v ≠ wasm_zero ->
-  {{{ P ∗ id ↦[host]{ q } v }}} e1 @ s; E {{{ RET w; Q }}} ⊢
-  {{{ P ∗ id ↦[host]{ q } v }}} (HE_if id e1 e2) @ s; E
-  {{{ RET w; Q }}}.
+  (id ↦[host]{ q } v -∗ WP e1 @ s; E {{ Φ }}) -∗
+  id ↦[host]{ q } v -∗ WP HE_if id e1 e2 @ s; E {{ Φ }}.
 Proof.
   move => HNTrap HNZero.
-  iIntros "#HT".
-  iApply wp_if => //.
-  iSplit.
-  - iModIntro.
-    iIntros (Φ) "[HP [Hh Hn0]] HQ".
-    iApply ("HT" with "[HP Hh Hn0]"); by iFrame.
-  - iModIntro.
-    iIntros (Φ) "[? [?%]] ?"; subst => //.
+  iIntros "HT".
+  iApply (wp_if with "[HT] []") => //; iIntros "(Hh & %Hv)"; by [iApply "HT" | ].
 Qed.
 
-Lemma wp_if_false s E id q v e1 e2 P Q:
-  {{{ P ∗ id ↦[host]{ q } wasm_zero }}} e2 @ s; E {{{ RET v; Q }}} ⊢
-  {{{ P ∗ id ↦[host]{ q } wasm_zero }}} (HE_if id e1 e2) @ s; E
-  {{{ RET v; Q }}}.
+Lemma wp_if_false s E id q e1 e2 Φ:
+  (id ↦[host]{ q } wasm_zero -∗ WP e2 @ s; E {{ Φ }}) -∗
+  id ↦[host]{ q } wasm_zero -∗ WP HE_if id e1 e2 @ s; E {{ Φ }}.
 Proof.
-  iIntros "#HF".
-  iApply wp_if => //.
-  iSplit.
-  - iModIntro.
-    by iIntros (Φ) "[? [?%]] ?" => //.
-  - iModIntro.
-    iIntros (Φ) "[HP [Hh ?]] HQ".
-    iApply ("HF" with "[HP Hh]"); by iFrame.
+  iIntros "HF".
+  iApply (wp_if with "[] [HF]") => //; iIntros "(Hh & %Hv)"; by [ | iApply "HF"].
 Qed.
 
 (* 
@@ -404,13 +383,11 @@ Qed.
   Note that we do not actually need any knowledge on the host variable id, since we're delaying
     the lookup to one step later.
 *)
-Lemma wp_while s E id w e P Q:
-  {{{ P }}} (HE_if id (HE_seq e (HE_while id e)) (HE_value wasm_zero)) @ s; E {{{ RET w; Q }}} ⊢
-  {{{ P }}} (HE_while id e) @ s; E {{{ RET w; Q }}}.
+Lemma wp_while s E id e Φ:
+  WP HE_if id (HE_seq e (HE_while id e)) (HE_value wasm_zero) @ s; E {{ Φ }} -∗
+  WP HE_while id e @ s; E {{ Φ }}.
 Proof.
-  iIntros "#HT".
-  iModIntro.
-  iIntros (Φ) "HP HQ".
+  iIntros "HT".
   iApply wp_lift_pure_step_no_fork.
   - move => σ1. destruct σ1 as [[hs ws] locs].
     destruct s => //.
@@ -419,9 +396,8 @@ Proof.
   - move => κ σ1 e2 σ2 efs HStep.
     by inv_head_step.
   - repeat iModIntro.
-    iIntros (κ e2 efs σ) "%".
-    inv_head_step.
-    iApply ("HT" with "HP"); by iAssumption.
+    iIntros (κ e2 efs σ HStep).
+    by inv_head_step.
 Qed.
 
 Lemma wp_new_rec s E (kip: list (field_name * id)) (w: list (field_name * host_value)):
@@ -509,10 +485,11 @@ Qed.
 
 Lemma wp_getfield s E id fieldname kvp v:
   lookup_kvp kvp fieldname = Some v ->
-  {{{ id ↦[host] (HV_record kvp) }}} (HE_get_field id fieldname) @ s; E {{{ RET v; id ↦[host] (HV_record kvp) }}}.
+  id ↦[host] (HV_record kvp) -∗
+     WP HE_get_field id fieldname @ s; E {{ v', ⌜ v = v' ⌝ ∗ id ↦[host] (HV_record kvp) }}.
 Proof.
   move => HkvpLookup.
-  iIntros (Φ) "Hh HΦ".
+  iIntros "Hh".
   iApply wp_lift_atomic_step => //.
   iIntros (σ ns κ κs nt) "Hσ !>".
   destruct σ as [[hs ws] locs].
@@ -529,20 +506,16 @@ Proof.
     iIntros (e2 σ2 efs HStep).
     destruct σ2 as [[hs2 ws2] locs2] => //=.
     iModIntro.
-    inv_head_step.
-    + iFrame.
-      iSplit => //=.
-      by iApply "HΦ".
-    + by rewrite H in H11.    
+    inv_head_step; by [ iFrame | rewrite H in H11 ].
 Qed.
 
-Lemma wp_seq_value s E v w e P Q:
+Lemma wp_seq_value s E v e Φ:
   v ≠ HV_trap ->
-  {{{ P }}} e @ s; E {{{ RET w; Q }}} -∗
-  {{{ P }}} HE_seq (HE_value v) e @ s; E {{{ RET w; Q }}}.
+  WP e @ s; E {{ Φ }} -∗
+  WP HE_seq (HE_value v) e @ s; E {{ Φ }}.
 Proof.
   move => Hvalue.
-  iIntros "#HE !>" (Φ) "HP HΦ".
+  iIntros "HP".
   iApply wp_lift_pure_step_no_fork.
   - move => σ.
     destruct σ as [[hs ws] locs].
@@ -554,11 +527,9 @@ Proof.
     by inv_head_step.
   - repeat iModIntro.
     iIntros (κ e2 efs σ HStep).
-    inv_head_step.
-    iApply ("HE" with "HP"); by iAssumption.
+    by inv_head_step.
 Qed.    
 
-(* TODO: add another version that uses hoare triples instead of wps. *)
 Lemma wp_seq s E e1 e2 Φ Ψ:
   (WP e1 @ s; E {{ v, Ψ v }} ∗
   (∀ v, (Ψ v) -∗ WP e2 @ s; E {{ Φ }})) ⊢
@@ -609,6 +580,7 @@ Proof.
   by iFrame.
 Qed.
 
+(* The same seq rule as above, but written in hoare triples. *)
 Lemma wp_seq_hoare s E e1 e2 P Q R v w:
   ({{{ P }}} e1 @ s; E {{{ RET v; Q }}} ∗
   {{{ Q }}} e2 @ s; E {{{ RET w; R }}})%I ⊢
@@ -659,14 +631,10 @@ Qed.
   - https://gitlab.mpi-sws.org/iris/iris/-/blob/master/iris/bi/big_op.v
 
   To get a specific instance from this big_sepM post-condition, use big_sepM_lookup.
- *)
 
-(*
   new_2d_gmap_at_n n l x creates a gmap with domain being the set of tuples {(n, j) | 0≤j<l}, 
   with all of them mapped to the same value x.
 *)
-Check new_2d_gmap_at_n.
-
 Lemma wp_table_create len s E:
   ⊢
   (WP HE_wasm_table_create len @ s; E
@@ -732,16 +700,11 @@ Qed.
       pure_reduce hs s locs (HE_wasm_table_set idt (N_of_nat n) id) hs s' locs (HE_value v)
  *)
 Lemma wp_table_set s E idt n id f fn tn:
-  {{{ id ↦[host] (HV_wov (WOV_funcref (Mk_funcidx fn))) ∗
-      idt ↦[host] (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗
-      (N.of_nat tn) ↦[wt][ n ] f }}}
-    HE_wasm_table_set idt n id @ s; E
-  {{{ RET (HV_wov (WOV_funcref (Mk_funcidx fn)));
-      id ↦[host] (HV_wov (WOV_funcref (Mk_funcidx fn))) ∗
-      idt ↦[host] (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗
-      (N.of_nat tn) ↦[wt][ n ] (Some fn) }}}.
+  let P := (id ↦[host] (HV_wov (WOV_funcref (Mk_funcidx fn))) ∗
+      idt ↦[host] (HV_wov (WOV_tableref (Mk_tableidx tn))))%I in
+  (P ∗ N.of_nat tn ↦[wt][ n ] f) -∗ WP HE_wasm_table_set idt n id @ s; E {{ v, ⌜ v = (HV_wov (WOV_funcref (Mk_funcidx fn))) ⌝ ∗ P ∗ N.of_nat tn ↦[wt][ n ] (Some fn)}}.
 Proof.
-  iIntros (Φ) "[Hfuncref [Htableref Hfunc]] HΦ".
+  iIntros "[[Hfuncref Htableref] Hfunc]".
   iApply wp_lift_atomic_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
@@ -767,11 +730,9 @@ Proof.
     iMod (gen_heap_update with "Hwt Hfunc") as "[Hwt Hfunc]".
     iModIntro.
     iFrame.
+    iSplit => //.
     erewrite gmap_of_table_insert => //; last by rewrite Nat2N.id.
     rewrite Nat2N.id.
-    iFrame.
-    iSplitL => //.
-    iApply ("HΦ" with "[Hfuncref Htableref Hfunc]").
     by iFrame.
 Qed.
   
@@ -784,9 +745,10 @@ Qed.
       pure_reduce hs s locs (HE_wasm_table_get idt (N_of_nat n)) hs s locs (HE_value (HV_wov (WOV_funcref (Mk_funcidx fn))))
  *)
 Lemma wp_table_get s E id n fn tn:
-  {{{ id ↦[host] (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦[wt][ n ] (Some fn) }}} HE_wasm_table_get id n @ s; E {{{ RET (HV_wov (WOV_funcref (Mk_funcidx fn))); id ↦[host] (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦[wt][ n ] (Some fn) }}}.
+  let P := (id ↦[host] (HV_wov (WOV_tableref (Mk_tableidx tn))) ∗ (N.of_nat tn) ↦[wt][ n ] (Some fn))%I in
+  P -∗ WP HE_wasm_table_get id n @ s; E {{ v, ⌜ v = HV_wov (WOV_funcref (Mk_funcidx fn)) ⌝ ∗ P }}.
 Proof.
-  iIntros (Φ) "[Htableref Hfunc] HΦ".
+  iIntros "[Htableref Hfunc]".
   iApply wp_lift_atomic_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
@@ -808,9 +770,6 @@ Proof.
   - iIntros "!>" (e2 σ2 efs HStep).
     inv_head_step.
     iModIntro.
-    iFrame.
-    iSplitL => //.
-    iApply "HΦ".
     by iFrame.
 Qed.
 
@@ -873,16 +832,13 @@ Qed.
       pure_reduce hs s locs (HE_wasm_memory_set idm n id) hs s' locs (HE_value (HV_byte b))
  *)
 Lemma wp_memory_set s E idm n id mn b' b:
-  {{{ id ↦[host] (HV_byte b) ∗
+  let P := (fun xb =>  
+      (id ↦[host] (HV_byte b) ∗
       idm ↦[host] (HV_wov (WOV_memoryref (Mk_memidx mn))) ∗
-      (N.of_nat mn) ↦[wm][ n ] b' }}}
-    HE_wasm_memory_set idm n id @ s; E
-  {{{ RET (HV_byte b);
-      id ↦[host] (HV_byte b) ∗
-      idm ↦[host] (HV_wov (WOV_memoryref (Mk_memidx mn))) ∗
-      (N.of_nat mn) ↦[wm][ n ] b }}}.
+      (N.of_nat mn) ↦[wm][ n ] xb)%I) in
+  (P b') -∗ WP HE_wasm_memory_set idm n id @ s; E {{ v, ⌜ v = HV_byte b ⌝ ∗ P b }}.
 Proof.
-  iIntros (Φ) "[Hbyte [Hmemref Hmembyte]] HΦ".
+  iIntros "[Hbyte [Hmemref Hmembyte]]".
   iApply wp_lift_atomic_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
@@ -916,9 +872,6 @@ Proof.
     erewrite gmap_of_memory_insert => //=.
     + unfold memory_list.mem_update in H10.
       rewrite Nat2N.id.
-      iFrame.
-      iSplitL => //.
-      iApply ("HΦ" with "[Hbyte Hmemref Hmembyte]").
       by iFrame.
     + by rewrite Nat2N.id.
     + apply lookup_lt_Some in Hmembyte.
@@ -934,9 +887,10 @@ Qed.
       pure_reduce hs s locs (HE_wasm_memory_get idm n) hs s locs (HE_value (HV_byte b))
  *)
 Lemma wp_memory_get s E n id mn b:
+  let P :=
   (id ↦[host] (HV_wov (WOV_memoryref (Mk_memidx mn))) ∗
-  (N.of_nat mn) ↦[wm][ n ] b) -∗
-    WP HE_wasm_memory_get id n @ s; E {{ v, ⌜ v = HV_byte b ⌝ }}.
+  (N.of_nat mn) ↦[wm][ n ] b)%I in
+  P -∗ WP HE_wasm_memory_get id n @ s; E {{ v, ⌜ v = HV_byte b ⌝ ∗ P }}.
 Proof.
   iIntros "[Hmemoryref Hbyte]".
   iApply wp_lift_atomic_step => //.
@@ -963,13 +917,13 @@ Proof.
     inv_head_step.
     iModIntro.
     iFrame.
-    iSplitL => //.
     unfold memory_list.mem_lookup in H12.
     rewrite nth_error_lookup in H12.
     unfold memory_to_list in Hbyte.
     rewrite H12 in Hbyte.
     by inversion Hbyte.
 Qed.
+
 (*
   | pr_memory_grow:
     forall hs s s' locs idm n m m' mn,
@@ -1084,21 +1038,17 @@ Qed.
 (*
   For this to succeed we need not only the full ownership of the global, but the mutability of the
     targetted global as well.
-*)
+ *)
 Lemma wp_global_set idg id s E w v gn:
   w.(g_mut) = MUT_mut ->
   typeof v = typeof (w.(g_val)) ->
-  {{{ id ↦[host] HV_wasm_value v ∗
+  let P := (fun xg => (id ↦[host] HV_wasm_value v ∗
       idg ↦[host] HV_wov (WOV_globalref (Mk_globalidx gn)) ∗
-      (N.of_nat gn) ↦[wg] w }}}
-    HE_wasm_global_set idg id @ s; E
-  {{{ RET (HV_wasm_value v);
-      id ↦[host] HV_wasm_value v ∗
-      idg ↦[host] HV_wov (WOV_globalref (Mk_globalidx gn)) ∗
-      (N.of_nat gn) ↦[wg] {|g_mut := MUT_mut; g_val := v|} }}}.
+      (N.of_nat gn) ↦[wg] xg)%I) in
+  P w -∗ WP HE_wasm_global_set idg id @ s; E {{ v', ⌜ v' = HV_wasm_value v ⌝ ∗ P (Build_global MUT_mut v) }}.
 Proof.
   move => HMut HType.
-  iIntros (Φ) "[Hwvalue [Hglobalref Hglobal]] HΦ".
+  iIntros "[Hwvalue [Hglobalref Hglobal]]".
   iApply wp_lift_atomic_step => //.
   iIntros (σ1 ns κ κs nt) "Hσ".
   destruct σ1 as [[hs ws] locs].
@@ -1122,9 +1072,6 @@ Proof.
     iFrame.
     rewrite - gmap_of_list_insert; last by apply lookup_lt_Some in Hglobal; lia.
     rewrite Nat2N.id.
-    iFrame.
-    iSplit => //.
-    iApply ("HΦ" with "[Hwvalue Hglobalref Hglobal]").
     by iFrame.
 Qed.
 
@@ -1136,9 +1083,10 @@ Qed.
       pure_reduce hs s locs (HE_wasm_global_get idg) hs s locs (HE_value (HV_wasm_value v))
  *)
 Lemma wp_global_get idg s E g gn:
+  let P :=
   (idg ↦[host] HV_wov (WOV_globalref (Mk_globalidx gn)) ∗
-  (N.of_nat gn) ↦[wg] g) -∗
-    WP HE_wasm_global_get idg @ s; E {{ v, ⌜ v = HV_wasm_value g.(g_val) ⌝ }}.
+  (N.of_nat gn) ↦[wg] g)%I in
+  P -∗ WP HE_wasm_global_get idg @ s; E {{ v, ⌜ v = HV_wasm_value g.(g_val) ⌝ ∗ P }}.
 Proof.
   iIntros "[Hglobalref Hglobal]".
   iApply wp_lift_atomic_step => //.
@@ -1159,8 +1107,7 @@ Proof.
   - iIntros "!>" (e2 σ2 efs HStep).
     inv_head_step.
     iModIntro.
-    iFrame.
-    by iSplit.
+    by iFrame.
 Qed.
       
 (*
@@ -1207,7 +1154,8 @@ Proof.
     iFrame.
     by rewrite - gmap_of_list_append.
 Qed.    
-  
+(*
+
 (*
   | pr_host_return:
     forall hs s locsf locs ids e vs tn,
@@ -1486,14 +1434,16 @@ Lemma wp_rec_löb s E f x e Φ Ψ :
  *)
 (*
   TODO: ?
-*)
+  This currently doesn't work
+ *)
+
 Lemma wp_call_host id ids hvs i s E Φ tn tm n e:
   length ids = length hvs ->
   length ids = length tn ->
   ( id ↦[host] HV_wov (WOV_funcref (Mk_funcidx i)) ∗
   N.of_nat i ↦[wf] FC_func_host (Tf tn tm) n e ∗
-  [∗ list] n ↦ idx ∈ ids, (∃ v, ⌜ hvs !! n = Some v ⌝ ∗ idx ↦[host] v ) ⊢
-  □(WP HE_call id ids @ s; E {{ v, Φ v }} -∗ HE_host_frame tm (hvs ++ List.repeat wasm_zero (length tm)) e @ s; E {{ v, Φ v }})) -∗
+  [∗ list] n ↦ idx ∈ ids, (∃ v, ⌜ hvs !! n = Some v ⌝ ∗ idx ↦[host] v )) ⊢
+  □(WP HE_call id ids @ s; E {{ v, Φ v }} -∗ WP HE_host_frame tm (hvs ++ List.repeat wasm_zero (length tm)) e @ s; E {{ v, Φ v }}) -∗
   WP HE_call id ids @ s; E {{ v, Φ v }}.
 Proof.
   move => HLen HLenType.
@@ -1506,7 +1456,7 @@ Proof.
   iIntros "Hfupd".
   destruct σ1 as [[hs ws] locs].
   iSimpl in "Hσ".
-  iDestruct "Hσ" as "[Hhs [? [Hwf ?]]]".
+  iDestruct "Hσ" as "(Hhs & ? & Hwf & ?)".
   iSplit.
   - iPureIntro.
     destruct s => //=.
@@ -1850,5 +1800,6 @@ Admitted.
       (* TODO: check if this is what we want *)
       fmap (fun x => HV_wasm_value x) vcs = vs ->
       wasm_reduce hs s f (ves ++ [::AI_invoke a]) hs' s' f [::AI_host_frame t1s vs e]
+*)
 *)
 End lifting.
