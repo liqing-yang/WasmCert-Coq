@@ -228,6 +228,7 @@ Definition ext_t_globs :=
       | _ => None
       end).
 
+  
 Definition alloc_module (s : store_record) (m : module) (imps : list v_ext) (gvs : list value)
     (s'_inst_exps : store_record * instance * seq module_export) : bool :=
   let '(s'_goal, inst, exps) := s'_inst_exps in
@@ -236,7 +237,7 @@ Definition alloc_module (s : store_record) (m : module) (imps : list v_ext) (gvs
   let '(s3, i_ms) := alloc_mems s2 m.(mod_mems) in
   let '(s', i_gs) := alloc_globs s3 m.(mod_globals) gvs in
   (s'_goal == s') &&
-  (inst.(inst_types) == m.(mod_types)) &&
+  (inst.(inst_types) == m.(mod_types)) && 
   (inst.(inst_funcs) == List.map (fun '(Mk_funcidx i) => i) (List.app (ext_funcs imps) i_fs)) &&
   (inst.(inst_tab) == List.map (fun '(Mk_tableidx i) => i) (List.app (ext_tabs imps) i_ts)) &&
   (inst.(inst_memory) == List.map (fun '(Mk_memidx i) => i) (List.app (ext_mems imps) i_ms)) &&
@@ -583,6 +584,18 @@ Definition instantiate (* FIXME: Do we need to use this: [(hs : host_state)] ? *
     let s'' := init_tabs s' inst (map (fun o => BinInt.Z.to_nat o.(Wasm_int.Int32.intval)) e_offs) m.(mod_elem) in
     (s_end : store_record_eqType)
       == init_mems s'' inst (map (fun o => BinInt.Z.to_N o.(Wasm_int.Int32.intval)) d_offs) m.(mod_data).
+
+Definition alloc_funcs_bool (s : store_record) (m : module) (imps : list v_ext) (s'_inst : store_record * instance) : bool :=
+  let '(s'_goal, inst) := s'_inst in
+  let '(s', i_fs) := alloc_funcs s m.(mod_funcs) inst in
+  (s'_goal == s') &&
+  (inst.(inst_funcs) == List.map (fun '(Mk_funcidx i) => i) (List.app (ext_funcs imps) i_fs)). 
+
+Definition instantiate_simpl (s : store_record) (m : module) (v_imps : list v_ext)
+                             (z : (store_record * instance * list module_export) * option nat) : Prop := 
+  let '((s_end, inst, v_exps), start) := z in
+  alloc_funcs_bool s m v_imps (s_end, inst).
+  (* /\ (inst.(inst_funcs) == List.map (fun '(Mk_funcidx i) => i) (List.app (ext_funcs imps) i_fs)). *)
 
 Definition gather_m_f_type (tfs : list function_type) (m_f : module_func) : option function_type :=
   let '(Mk_typeidx i) := m_f.(modfunc_type) in
